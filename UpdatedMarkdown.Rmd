@@ -1,0 +1,259 @@
+---
+title: "MAIHDA Markdown"
+author: "Waddling the PATH"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(rio)
+library(tidyverse)
+library(janitor)
+library(srvyr)
+library(gtsummary)
+library(survey)
+library(csSampling)
+library(dplyr)
+library(brms)
+library(rstan)
+library(cmdstanr)
+library(lme4)
+library(bayesplot)
+
+load("C:/Users/laure/OneDrive - University Of Oregon/2025 SPR Cup/Analysis/36498-4001-Data.rda")
+load("C:/Users/laure/OneDrive - University Of Oregon/2025 SPR Cup/Analysis/36498-4321-Data.rda")
+
+wave4 <- da36498.4001
+wave4_wghts <- da36498.4321
+
+dat <- left_join(wave4, wave4_wghts, by = "PERSONID")
+```
+
+# Data Management
+
+## Recode variables
+
+```{r}
+dat$R04R_A_RACECAT3_IMP <- fct_recode(dat$R04R_A_RACECAT3_IMP,
+                   "White alone" = "(1) 1 = White alone",
+                   "Black alone" = "(2) 2 = Black alone",
+                   "Other" = "(3) 3 = Other")
+
+dat$R04R_A_HISP_IMP <- fct_recode(dat$R04R_A_HISP_IMP,
+                   "Hispanic" = "(1) 1 = Hispanic",
+                   "Not Hispanic" = "(2) 2 = Not Hispanic")
+
+dat$R04R_A_SEXORIENT2 <- fct_recode(dat$R04R_A_SEXORIENT2,
+                   "Not straight" = "(1) 1 = Lesbian, Gay, Bisexual, Something else",
+                   "Straight" = "(2) 2 = Straight")
+
+dat$R04R_A_AGECAT6 <- as.numeric(dat$R04R_A_AGECAT6)
+dat$R04R_A_SEX_IMP <- as.numeric(dat$R04R_A_SEX_IMP)
+dat$R04X_CB_REGION <- as.numeric(dat$R04X_CB_REGION)
+
+dat <- dat %>% 
+  # indicator variables for model variables
+  mutate( 
+    northeast = ifelse(R04X_CB_REGION == 1, 1, 0), # northeast
+    midwest = ifelse(R04X_CB_REGION == 2, 1, 0), # midwest
+    south = ifelse(R04X_CB_REGION == 3, 1, 0), # south
+    west = ifelse(R04X_CB_REGION == 4, 1, 0), # west
+    male = ifelse(R04R_A_SEX_IMP == 1, 1, 0), # male
+    female = ifelse(R04R_A_SEX_IMP == 2, 1, 0), # female
+    age1824 = ifelse(R04R_A_AGECAT6 == 1, 1, 0), # aged 18-24
+    age2544 = ifelse(R04R_A_AGECAT6 == 2 | R04R_A_AGECAT6 == 3, 1, 0), # aged 25-44
+    age45plus = ifelse(R04R_A_AGECAT6 == 4 | R04R_A_AGECAT6 == 5 | R04R_A_AGECAT6 == 6, 1, 0), # aged 45+
+    esteprod = ifelse(R04R_A_CUR_ESTD_EPRODS == 1, 1, 0), # established user
+    edsdeprod = ifelse(R04R_A_CUR_EDSD_EPRODS == 1, 1, 0), # everyday/someday user
+    race = R04R_A_RACECAT3_IMP,
+    ethnicity = R04R_A_HISP_IMP,
+    sexorient = R04R_A_SEXORIENT2
+    ) %>% 
+ # subpopulation indicators
+    mutate( 
+    # lifetime MDE analysis subpopulation
+    sp_1 = ifelse(!is.na(R04X_CB_REGION) & # non-missing data on model variables
+                    !is.na(R04R_A_SEX_IMP) & 
+                    !is.na(R04R_A_AGECAT6) & 
+                    !is.na(R04R_A_RACECAT3_IMP) & 
+                    !is.na(R04R_A_HISP_IMP) &
+                    !is.na(R04R_A_SEXORIENT2) &
+                    !is.na(R04_A_C04WGT) &
+                    !is.na(edsdeprod), 1, 0))
+```
+
+## Generate strata
+
+```{r}
+# dat$R04R_age <- as.numeric(dat$R04R_A_AGECAT6)
+# dat$R04R_sex <- as.numeric(dat$R04R_A_SEX_IMP)
+# dat$R04R_region <- as.numeric(dat$R04X_CB_REGION)
+
+dat <- dat %>%
+  mutate(R04R_A_AGECAT6 = case_when(
+    R04R_A_AGECAT6 %in% c(2, 3) ~ 2,   # Keep 2 and 3 as 2
+    R04R_A_AGECAT6 > 3 ~ 3,            # Change anything higher than 3 to 3
+    TRUE ~ R04R_A_AGECAT6              # Keep other values unchanged
+  ))
+
+dat <- dat %>% 
+ mutate(strata = 100*R04X_CB_REGION + 10*R04R_A_AGECAT6 + 1*R04R_A_SEX_IMP)
+```
+
+## Select variables
+```{r}
+dat <- dat %>% 
+  select(PERSONID,
+         VARPSU, VARSTRAT, R04_A_C04WGT, R04_A_C04WGT1:R04_A_C04WGT100, # survey design weights
+         strata, # intersectional groups/strata
+         northeast, midwest, south, west, # race/ethnicity
+         male, female, # gender
+         age1824, age2544, age45plus, # age category
+         edsdeprod, # outcome measures
+         sp_1) %>%  # subpopulation indicators
+ filter(sp_1 == 1)
+
+# Save the final data frame to be used in analysis
+# saveRDS(nsduh, file="nsduh.RDS")
+```
+
+
+
+# Analysis Prep
+## Define priors
+```{r}
+path_priors <- c(
+  # logit scale
+  prior(normal(0, 2), class = Intercept),
+  prior(normal(0, 2), class = b),
+  # variance components
+  prior(inv_gamma(2, 2), class = sd))
+```
+
+## Survey rep object
+```{r}
+design_sp1 <- svrepdesign(
+  data = dat,
+  type = "Fay",
+  rho = 0.3,
+  repweights = dat[, grep("^R04_A_C04WGT[0-9]+$", names(dat))],
+  weights = ~R04_A_C04WGT,
+  mse = TRUE)
+
+# Check mean of weights from subpop survey design object
+summary(design_sp1$pweights)
+# Calibrate weights so the mean=1
+design_sp1 <- calibrate(design_sp1,
+                        ~ 1,
+                        c(`(Intercept)` = length(design_sp1$pweights)),
+                        compress = FALSE)
+# Check mean after calibration
+summary(design_sp1$pweights) # Mean=1
+```
+
+```{r}
+# Write and save Stan file
+stancode_pyMDE_m1 <- make_stancode(
+  brmsformula(
+    as.factor(edsdeprod)|weights(R04_A_C04WGT) ~ 
+      1 + age1824 + age2544 + age45plus + (1 | strata)
+    ), 
+  data = dat,
+  prior = path_priors,
+  family = bernoulli(link="logit"),
+  save_model = "02_fits/weighted_stancode/brms_pyMDE_m1.stan")
+# Load the Stan file
+modbrms_pyMDE_m1 <- stan_model("02_fits/weighted_stancode/brms_pyMDE_m1.stan")
+
+# Set up data
+databrms_pyMDE_m1 <- make_standata(
+  brmsformula(
+    as.factor(edsdeprod)|weights(R04_A_C04WGT) ~ 
+      1 + age1824 + age2544 + age45plus + (1 | strata)
+    ),
+  data = design_sp1$variables,
+  prior = path_priors,
+  family = bernoulli(link="logit"))
+# Set Stan model weights = survey design weights
+databrms_pyMDE_m1$weights <- design_sp1$pweights
+```
+
+Inspect: Warning: There were 1 divergent transitions after warmup. See
+https://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
+to find out why this is a problem and how to eliminate them.
+Warning: Examine the pairs() plot to diagnose sampling problems
+
+```{r}
+# Model estimation
+set.seed(828) # for reproducible results
+pyMDE_m1 <- cs_sampling(
+  svydes = design_sp1, # use the subpop-defined survey object
+  mod_stan = modbrms_pyMDE_m1,
+  data_stan = databrms_pyMDE_m1,
+  ctrl_stan = list(chains = 4,
+                   iter = 4000, # 16,000 total iterations (8,000 post-warmup)
+                   warmup = 2000, # 8,000 warmups
+                   prior = path_priors,
+                   backend = "cmdstanr",
+                   threads = threading(2),
+                   thin = 1),
+  rep_design = TRUE,
+  sampling_args = list(cores = 4))
+
+# Save the model
+saveRDS(pyMDE_m1, file="02_fits/weighted_csSampling/pyMDE_m1.RDS")
+
+mcmc_pairs(pyMDE_m1$stan_fit)
+```
+
+```{r}
+# Write and save Stan file
+stancode_pyMDE_m2 <- make_stancode(
+  brmsformula(
+    as.factor(edsdeprod)|weights(R04_A_C04WGT) ~ 
+    1 + age1824 + age2544 + age45plus + female + 
+    northeast + midwest + south + west + (1 | strata)
+    ),
+  data = dat,
+  prior = path_priors,
+  family = bernoulli(link="logit"),
+  save_model = "02_fits/weighted_stancode/brms_pyMDE_m2.stan")
+# Load the Stan file
+modbrms_pyMDE_m2 <- stan_model("02_fits/weighted_stancode/brms_pyMDE_m2.stan")
+# Set up data
+databrms_pyMDE_m2 <- make_standata(
+  brmsformula(
+    as.factor(edsdeprod)|weights(R04_A_C04WGT) ~ 
+    1 + age1824 + age2544 + age45plus + female + 
+    northeast + midwest + south + west + (1 | strata)
+    ),
+  data = design_sp1$variables,
+  prior = path_priors,
+  family = bernoulli(link="logit"))
+# Set Stan model weights = survey design weights
+databrms_pyMDE_m2$weights <- design_sp1$pweights
+
+
+# Model estimation
+set.seed(828) # for reproducible results
+pyMDE_m2 <- cs_sampling(
+  svydes = design_sp2, # use the subpop-defined survey object
+  mod_stan = modbrms_pyMDE_m2,
+  data_stan = databrms_pyMDE_m2,
+  ctrl_stan = list(chains = 4,
+                   iter = 4000, # 16,000 total iterations (8,000 post-warmup)
+                   warmup = 2000, # 8,000 warmups
+                   prior = nsduh_priors,
+                   backend = "cmdstanr",
+                   threads = threading(2),
+                   thin = 1),
+  rep_design = TRUE,
+  sampling_args = list(cores = 4))
+
+# Save the model
+saveRDS(pyMDE_m2, file="02_fits/weighted_csSampling/pyMDE_m2.RDS")
+
+```
+
