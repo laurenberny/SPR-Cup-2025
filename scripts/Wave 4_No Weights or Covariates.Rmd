@@ -1,0 +1,398 @@
+---
+title: "Wave 4 - No Weights or Covariates"
+author: "Waddling the PATH"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven)
+library(tidyverse)
+library(ggeffects)
+library(lme4)
+library(merTools)
+library(labelled)
+library(sjPlot)
+library(Metrics)
+library(janitor)
+library(here)
+library(rio)
+
+load(here("data", "36498-4001-Data.rda")) # Wave 4 data with cases' survey responses
+
+dat <- da36498.4001 # just to simplify name of dataframe from what it imports as
+```
+
+# Data Management
+
+## Recode variables
+
+```{r}
+dat$R04R_A_RACECAT3_IMP <- fct_recode(dat$R04R_A_RACECAT3_IMP,
+                   "White alone" = "(1) 1 = White alone",
+                   "Black alone" = "(2) 2 = Black alone",
+                   "Other race" = "(3) 3 = Other")
+
+dat$R04R_A_HISP_IMP <- fct_recode(dat$R04R_A_HISP_IMP,
+                   "Hispanic" = "(1) 1 = Hispanic",
+                   "Not Hispanic" = "(2) 2 = Not Hispanic")
+
+dat$R04R_A_SEXORIENT2 <- fct_recode(dat$R04R_A_SEXORIENT2,
+                   "Not straight" = "(1) 1 = Lesbian, Gay, Bisexual, Something else",
+                   "Straight" = "(2) 2 = Straight")
+
+dat$R04R_A_AGECAT6 <- as.numeric(dat$R04R_A_AGECAT6)
+dat$R04R_A_SEX_IMP <- as.numeric(dat$R04R_A_SEX_IMP)
+dat$R04X_CB_REGION <- as.numeric(dat$R04X_CB_REGION)
+dat$R04R_A_CUR_EDSD_EPRODS <- as.numeric(dat$R04R_A_CUR_EDSD_EPRODS)
+dat$R04R_A_CUR_ESTD_EPRODS <- as.numeric(dat$R04R_A_CUR_ESTD_EPRODS)
+
+dat <- dat %>% 
+  # indicator variables for model variables
+  mutate( 
+    northeast = ifelse(R04X_CB_REGION == 1, 1, 0), # northeast
+    midwest = ifelse(R04X_CB_REGION == 2, 1, 0), # midwest
+    south = ifelse(R04X_CB_REGION == 3, 1, 0), # south
+    west = ifelse(R04X_CB_REGION == 4, 1, 0), # west
+    male = ifelse(R04R_A_SEX_IMP == 1, 1, 0), # male
+    female = ifelse(R04R_A_SEX_IMP == 2, 1, 0), # female
+    age1824 = ifelse(R04R_A_AGECAT6 == 1, 1, 0), # aged 18-24
+    age2544 = ifelse(R04R_A_AGECAT6 == 2 | R04R_A_AGECAT6 == 3, 1, 0), # aged 25-44
+    age45plus = ifelse(R04R_A_AGECAT6 == 4 | R04R_A_AGECAT6 == 5 | R04R_A_AGECAT6 == 6, 1, 0), # aged 45+
+    esteprod = ifelse(R04R_A_CUR_ESTD_EPRODS == 1, 1, 0), # established user
+    edsdeprod = ifelse(R04R_A_CUR_EDSD_EPRODS == 1, 1, 0), # everyday/someday user
+    race = R04R_A_RACECAT3_IMP, # race, imputed
+    ethnicity = R04R_A_HISP_IMP, # ethnicity, imputed
+    sexorient = R04R_A_SEXORIENT2 # sexual orientation (no imputed option)
+    ) %>% 
+    # subpopulation indicators (mark cases w/ missing data)
+    mutate( 
+    sp_1 = ifelse(!is.na(R04X_CB_REGION) & # non-missing data on model variables
+                    !is.na(R04R_A_SEX_IMP) & 
+                    !is.na(R04R_A_AGECAT6) & 
+                    !is.na(edsdeprod), 1, 0))
+
+# Convert region to a factor
+dat$region <- factor(dat$R04X_CB_REGION,
+                      levels = 1:4,
+                      labels = c("northeast", "midwest", "south", "west"))
+
+# Convert sex to a factor
+dat$sex <- factor(dat$R04R_A_SEX_IMP,
+                   levels = 1:2,
+                   labels = c("male", "female"))
+
+# Convert age group to collapsed factor
+dat$age_group <- cut(dat$R04R_A_AGECAT6,
+                      breaks = c(0, 1, 3, 6),
+                      labels = c("age1824", "age2544", "age45plus"),
+                      right = TRUE)
+
+```
+
+## Generate strata
+
+```{r}
+dat <- dat %>%
+  mutate(R04R_A_AGECAT6 = case_when(
+    R04R_A_AGECAT6 %in% c(2, 3) ~ 2,   # Keep 2 and 3 as 2
+    R04R_A_AGECAT6 > 3 ~ 3,            # Change anything higher than 3 to 3
+    TRUE ~ R04R_A_AGECAT6              # Keep other values unchanged
+  ))
+
+dat <- dat %>% 
+ mutate(strata = 100*R04X_CB_REGION + 10*R04R_A_AGECAT6 + 1*R04R_A_SEX_IMP)
+```
+
+## Select variables
+NOTE: Using everyday/someday e-product use as outcome.
+
+```{r}
+tabyl(dat$sp_1) # 36 cases missing due to item non-response
+
+dat <- dat %>% 
+  dplyr::select(PERSONID,
+         strata, # intersectional groups/strata
+         region, sex, age_group, # cat variables
+         northeast, midwest, south, west, # race/ethnicity
+         male, female, # gender
+         age1824, age2544, age45plus, # age category
+         edsdeprod, # outcome measure
+         sp_1) %>%  # subpopulation indicators (missing indicator)
+ filter(sp_1 == 1) # filter out missing
+```
+
+
+# MAIHDA
+## Null model
+
+```{r}
+##################################
+# Estimate Logistic model 2A
+##################################
+
+# Fit the two-level logistic regression with no covariates
+model2A <- glmer(edsdeprod ~ (1|strata), data=dat, family=binomial)
+summary(model2A)
+
+# Get the estimates as Odds ratios (and SEs on the odds scale)
+tab_model(model2A, show.se=T)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat$m2Axbu <- predict(model2A, type="response")
+
+# Predict the linear predictor for the fixed portion of the model only
+# (only the intercept, so this is just the weighted grand mean probability)
+dat$m2Axb <- predict(model2A, type="response", re.form=NA)
+```
+
+## Full additive model
+
+```{r}
+#####################################
+# Estimate Logistic model 2B
+####################################
+
+# Fit the two-level linear regression with covariates
+model2B <- glmer(edsdeprod ~ region + age_group + sex +
+                   (1|strata), data=dat, family=binomial)
+summary(model2B)
+
+# Get the estimates as Odds ratios (and SEs on the odds scale)
+tab_model(model2B, show.se=T)
+
+# predict the fitted linear predictor, and confidence intervals, on the logit 
+# scale
+m2Bm <- predictInterval(model2B, level=0.95, include.resid.var=FALSE)
+# create a new id variable for this newly created dataframe
+m2Bm <- mutate(m2Bm, id=row_number())
+
+# on the logit scale, predict the linear predictor for the fixed portion of the
+# model only
+dat$m2BmF <- predict(model2B, re.form=NA)
+
+# predict the fitted linear predictor, and confidence intervals, on the 
+# probability scale
+m2Bm_prob <- predictInterval(model2B, level=0.95, include.resid.var=FALSE, 
+                             type="probability")
+# note that, unlike the stata code, this code combines the uncertainty from the
+# fixed and random parts. This saves a step later compared to the Stata code.
+
+# create a new id variable for this newly created dataframe
+m2Bm_prob <- mutate(m2Bm_prob, id=row_number())
+
+# predict the fitted linear predictor, on the probability scale, for the fixed 
+# portion of the model only
+dat$m2Bxb <- predict(model2B, re.form=NA, type="response")
+
+#predict the stratum random effects and associated standard errors
+m2Bu <- REsim(model2B)
+```
+
+Null model: τ00 strata	= 0.17
+Additive main effects model: τ00 strata	= 0.05
+
+# Collapse strata
+
+```{r}
+###################################
+# create a data frame at the strata level (with the means of each variable)
+##################################
+
+# first, merge predictions with original data
+
+# create an id variable for merging in the tut dataframe
+dat$id <- seq.int(nrow(dat))
+
+# merge in m2bm_prob
+dat2 <- merge(dat, m2Bm_prob, by="id")
+
+dat2 <- dat2 %>%
+  rename(
+    m2Bmfit=fit,
+    m2Bmupr= upr,
+    m2Bmlwr=lwr
+  )
+
+# merge in m2Bm
+dat2 <- merge(dat2, m2Bm, by="id")
+
+dat2 <- dat2 %>%
+  rename(
+    m2BmfitL=fit,
+    m2BmuprL= upr,
+    m2BmlwrL=lwr
+  )
+
+dat2 <- dat2 %>%
+  group_by(strata) %>%
+  mutate(strataN = n())
+
+# Collapse the data down to a stratum-level dataset 
+stratum_level <- aggregate(x=dat2["edsdeprod"], 
+                  by=dat2[c("region", "age_group", "sex",
+                  "strata", "strataN",
+                  "m2Bmfit", "m2Bmupr", "m2Bmlwr", 
+                  "m2BmfitL", "m2BmuprL", "m2BmlwrL",
+                  "m2BmF")],
+                  FUN=mean)
+
+# convert the outcome from a proportion to a percentage
+stratum_level$edsdeprod <- stratum_level$edsdeprod*100
+```
+
+
+# Tables and visualizations
+
+```{r}
+############
+# Table 3
+############
+
+# Create a table that includes all model estimates, including the Variance 
+# Partitioning Coefficients (VPC)
+tab_model(model2A, model2B, p.style="stars")
+
+# Calculate the Proportional Change in Variance (PCV) (as a percentage) for 
+# models 1 and 2
+
+# first extract variance matrices from the model objects
+vc2a <-as.data.frame(VarCorr(model2A))
+vc2b <-as.data.frame(VarCorr(model2B))
+
+# calculate PCVs using components of these variance matrices (as percentages)
+PCV2 <- ((vc2a[1,4] - vc2b[1,4]) / vc2a[1,4])*100
+PCV2
+
+# Calculate the area under the receiver operating characteristic (ROC) curve
+# for model 2a - based on intercept and stratum random effects
+AUC2A <- auc(dat2$edsdeprod, dat2$m2Axbu)
+
+#for model 2A - based on only the fixed portion of the model
+AUC2AF <- auc(dat2$edsdeprod, dat2$m2Axb)
+
+#for model 2b - based on intercept, main effects, and stratum random effects
+AUC2B <- auc(dat2$edsdeprod, dat2$m2Bmfit)
+#for model 2b - based on the fixed portion of the model (main effects)
+AUC2BF <- auc(dat2$edsdeprod, dat2$m2Bxb) 
+
+#output the AUC calculations
+AUC2A
+AUC2AF
+AUC2B
+AUC2BF
+
+```
+
+
+```{r}
+##############
+#Figure 2 / table 4
+#############
+
+# Panel B
+
+# note that (compared to Stata code), our predictions are already on the
+# probability scale
+
+# Rank the predicted stratum probabilities
+stratum_level <- stratum_level %>%
+  mutate(rank2=rank(m2Bmfit))
+
+# convert probabilities to percentages
+stratum_level$m2Bmfit <- stratum_level$m2Bmfit * 100
+stratum_level$m2Bmupr <- stratum_level$m2Bmupr * 100
+stratum_level$m2Bmlwr <- stratum_level$m2Bmlwr * 100
+
+# Plot the caterpillar plot of the predicted stratum means
+ggplot(stratum_level, aes(y=m2Bmfit, x=rank2)) +
+  geom_point() +
+  geom_pointrange(aes(ymin=m2Bmlwr, ymax=m2Bmupr)) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2B") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+# Generate list of 6 highest and 6 lowest predicted stratum means (for Table 4)
+stratum_level <- stratum_level[order(stratum_level$rank2),]
+head(stratum_level)
+tail(stratum_level)
+
+ranks <- stratum_level %>% 
+ dplyr::select(region, age_group, sex, strata, strataN, edsdeprod, rank2)
+
+ranks
+```
+
+
+```{r}
+###############
+# Figure 3
+###############
+# Panel C
+
+# create figure but on the log-odds scale
+m2Bu <- REsim(model2B)
+plotREsim(m2Bu)
+
+# This is more difficult to do on the probability scale
+
+# For this plot we follow a simulation-based approach to 
+# calculating the limits of the approximate 95% confidence intervals of our 
+# predictions. This involves simulating 1000 values for each predicted value.
+
+# Approximate as the model assumes no sampling covariability between the 
+# regression coefficients and the stratum random effect
+
+# duplicate stratum data *1000 (creating a new dataframe, stratumsim)
+stratumsim <- rbind(stratum_level, 
+                    stratum_level[rep(1:nrow(stratum_level),999),])
+
+# Generate the approximate standard error for the linear prediction on the
+# logit scale. We do this based on the difference between one estimated
+# confidence interval and the estimated fit, on the logit scale
+stratumsim$m2Bmse <- (stratumsim$m2BmfitL - stratumsim$m2BmlwrL)/1.96
+
+# specify initial value of the random-number seed (for replication purposes)
+set.seed(354612)
+
+# Generate the predicted stratum percentages based on the regression 
+# coefficients and the predicted stratum random effect and factoring in 
+# prediction uncertainty
+stratumsim$m2Bpsim <- 100*invlogit(stratumsim$m2BmfitL + 
+                                  rnorm(24000, mean=0, sd=stratumsim$m2Bmse))
+
+# Generate the predicted stratum percentages ignoring the predicted stratum 
+# effect
+stratumsim$m2BpAsim <- 100*invlogit(stratumsim$m2BmF)
+
+# Generate the difference in the predicted stratum percentages due to the 
+# predicted stratum effect
+stratumsim$m2BpBsim <- stratumsim$m2Bpsim - stratumsim$m2BpAsim
+
+# sort the data by strata
+stratumsim <- stratumsim %>% 
+ arrange(strata)
+
+# collapse the data down to stratum level, generate mean and SE variables,
+# then use these to generate rank and lower and upper limits of the approximate
+# 95% confidence intervals of the difference in predicted stratum percentates 
+# due to interaction variables.
+stratumsim2 <- stratumsim %>%
+  group_by(strata) %>%
+  summarise(mean=mean(m2BpBsim), std=sd(m2BpBsim)) %>%
+  mutate(rank=rank(mean)) %>%
+  mutate(hi=(mean + 1.96*std)) %>%
+  mutate(lo=(mean - 1.96*std))
+
+# plot the caterpillar plot of the predicted stratum percentage differences
+ggplot(stratumsim2, aes(x=rank, y=mean)) +
+  geom_hline(yintercept=0, color="red", linewidth=1) +
+  geom_point(size=3) +
+  geom_pointrange(aes(ymin=lo, ymax=hi)) + 
+  xlab("Stratum Rank") +
+  ylab("Difference in predicted EDSD e-product user due to interactions") +
+  theme_bw()
+```
+
