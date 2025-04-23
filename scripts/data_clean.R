@@ -13,17 +13,13 @@ raw_7_weights <- import(here("data/36498-7331-Data.rda"))
 lab_4 <- c(
  #new name = old name
  "id" = "PERSONID",
- "soc_pos" = "R04_AM0040",
  "region" = "R04X_CB_REGION",
  "ethnicity" = "R04R_A_HISP_IMP",
  "race" = "R04R_A_RACECAT3_IMP",
  "sexuality" = "R04R_A_SEXORIENT2",
  "sex" = "R04R_A_SEX",
  "age" = "R04R_A_AGECAT6",
- "eprod_30" = "R04R_A_P30D_EPRODS",
- "eprod_every_day" = "R04R_A_EDY_EPRODS",
- "eprod_some_days" = "R04R_A_SDY_EPRODS",
- "eprod_no_threshold" = "R04R_A_CUR_EDSD_EPRODS",
+ "eprod_edsd" = "R04R_A_CUR_EDSD_EPRODS",
  "eprod_established" = "R04R_A_CUR_ESTD_EPRODS",
  "var_strat" = "VARSTRAT",
  "var_psu" = "VARPSU",
@@ -33,17 +29,13 @@ lab_4 <- c(
 lab_7 <- c(
  #new name = old name
  "id" = "PERSONID",
- "soc_pos" = "R07_AM0040",
  "region" = "R07X_CB_REGION",
  "ethnicity" = "R07R_A_HISP_IMP",
  "race" = "R07R_A_RACECAT3_IMP",
  "sexuality" = "R07R_A_SEXORIENT2",
  "sex" = "R07R_A_SEX_IMP",
  "age" = "R07R_A_AGECAT6",
- "eprod_30" = "R07R_A_P30D_EPRODS",
- "eprod_every_day" = "R07R_A_EDY_EPRODS",
- "eprod_some_days" = "R07R_A_SDY_EPRODS",
- "eprod_no_threshold" = "R07R_A_CUR_EDSD_EPRODS",
+ "eprod_edsd" = "R07R_A_CUR_EDSD_EPRODS",
  "eprod_established" = "R07R_A_CUR_ESTD_EPRODS",
  "var_strat" = "VARSTRAT",
  "var_psu" = "VARPSU",
@@ -94,19 +86,7 @@ rm(raw_4, raw_7, raw_4_weights, raw_7_weights, lab_4, lab_7)
 #### RECODE WAVE 4 DATASET ####
 wave_4 <- wave_4 %>% 
  #simple recode of existing variables
- mutate(soc_pos = case_when(
-  soc_pos == "(01) 1 = 10" ~ 10,
-  soc_pos == "(02) 2 = 9" ~ 9,
-  soc_pos == "(03) 3 = 8" ~ 8,
-  soc_pos == "(04) 4 = 7" ~ 7,
-  soc_pos == "(05) 5 = 6" ~ 6,
-  soc_pos == "(06) 6 = 5" ~ 5,
-  soc_pos == "(07) 7 = 4" ~ 4,
-  soc_pos == "(08) 8 = 3" ~ 3,
-  soc_pos == "(09) 9 = 2" ~ 2,
-  soc_pos == "(10) 10 = 1" ~ 1
- ),
- region = case_when(
+ mutate(region = case_when(
   region == "(1) 1 = Northeast" ~ "Northeast",
   region == "(2) 2 = Midwest" ~ "Midwest",
   region == "(3) 3 = South" ~ "South",
@@ -125,28 +105,15 @@ wave_4 <- wave_4 %>%
  sex = ifelse(sex == "(1) 1 = Male", "Male", "Female"),
  age = case_when(
   age == "(1) 1 = 18 to 24 years old" ~ "18-24",
-  age == "(2) 2 = 25 to 34 years old" ~ "25-34",
-  age == "(3) 3 = 35 to 44 years old" ~ "35-44",
-  age == "(4) 4 = 45 to 54 years old" ~ "45-54",
-  age == "(5) 5 = 55 to 64 years old" ~ "55-64",
-  age == "(6) 6 = 65 or more years old" ~ "65+"
+  age == "(2) 2 = 25 to 34 years old" ~ "25-44",
+  age == "(3) 3 = 35 to 44 years old" ~ "25-44",
+  age == "(4) 4 = 45 to 54 years old" ~ "45+",
+  age == "(5) 5 = 55 to 64 years old" ~ "45+",
+  age == "(6) 6 = 65 or more years old" ~ "45+"
  ),
- eprod_30 = ifelse(eprod_30 == "(1) 1 = Yes", 1, 0),
- eprod_every_day = ifelse(eprod_every_day == "(1) 1 = Yes", 1, 0),
- eprod_some_days = ifelse(eprod_some_days == "(1) 1 = Yes", 1, 0),
- eprod_no_threshold = ifelse(eprod_no_threshold == "(1) 1 = Yes", 1, 0),
+ eprod_edsd = ifelse(eprod_edsd == "(1) 1 = Yes", 1, 0),
  eprod_established = ifelse(eprod_established == "(1) 1 = Yes", 1, 0),
  #create indicators
- soc_pos_1 = ifelse(soc_pos == 1, 1, 0),
- soc_pos_2 = ifelse(soc_pos == 2, 1, 0),
- soc_pos_3 = ifelse(soc_pos == 3, 1, 0),
- soc_pos_4 = ifelse(soc_pos == 4, 1, 0),
- soc_pos_5 = ifelse(soc_pos == 5, 1, 0),
- soc_pos_6 = ifelse(soc_pos == 6, 1, 0),
- soc_pos_7 = ifelse(soc_pos == 7, 1, 0),
- soc_pos_8 = ifelse(soc_pos == 8, 1, 0),
- soc_pos_9 = ifelse(soc_pos == 9, 1, 0),
- soc_pos_10 = ifelse(soc_pos == 10, 1, 0),
  northeast = ifelse(region == "Northeast", 1, 0),
  midwest = ifelse(region == "Midwest", 1, 0),
  south = ifelse(region == "South", 1, 0),
@@ -177,19 +144,7 @@ wave_4 <- wave_4 %>%
 #### RECODE WAVE 7 DATASET ####
 wave_7 <- wave_7 %>% 
  #simple recode of existing variables
- mutate(soc_pos = case_when(
-  soc_pos == "(01) 1 = 10" ~ 10,
-  soc_pos == "(02) 2 = 9" ~ 9,
-  soc_pos == "(03) 3 = 8" ~ 8,
-  soc_pos == "(04) 4 = 7" ~ 7,
-  soc_pos == "(05) 5 = 6" ~ 6,
-  soc_pos == "(06) 6 = 5" ~ 5,
-  soc_pos == "(07) 7 = 4" ~ 4,
-  soc_pos == "(08) 8 = 3" ~ 3,
-  soc_pos == "(09) 9 = 2" ~ 2,
-  soc_pos == "(10) 10 = 1" ~ 1
- ),
- region = case_when(
+ mutate(region = case_when(
   region == "(1) 1 = Northeast" ~ "Northeast",
   region == "(2) 2 = Midwest" ~ "Midwest",
   region == "(3) 3 = South" ~ "South",
@@ -208,28 +163,15 @@ wave_7 <- wave_7 %>%
  sex = ifelse(sex == "(1) 1 = Male", "Male", "Female"),
  age = case_when(
   age == "(1) 1 = 18 to 24 years old" ~ "18-24",
-  age == "(2) 2 = 25 to 34 years old" ~ "25-34",
-  age == "(3) 3 = 35 to 44 years old" ~ "35-44",
-  age == "(4) 4 = 45 to 54 years old" ~ "45-54",
-  age == "(5) 5 = 55 to 64 years old" ~ "55-64",
-  age == "(6) 6 = 65 or more years old" ~ "65+"
+  age == "(2) 2 = 25 to 34 years old" ~ "25-44",
+  age == "(3) 3 = 35 to 44 years old" ~ "25-44",
+  age == "(4) 4 = 45 to 54 years old" ~ "45+",
+  age == "(5) 5 = 55 to 64 years old" ~ "45+",
+  age == "(6) 6 = 65 or more years old" ~ "45+"
  ),
- eprod_30 = ifelse(eprod_30 == "(1) 1 = Yes", 1, 0),
- eprod_every_day = ifelse(eprod_every_day == "(1) 1 = Yes", 1, 0),
- eprod_some_days = ifelse(eprod_some_days == "(1) 1 = Yes", 1, 0),
- eprod_no_threshold = ifelse(eprod_no_threshold == "(1) 1 = Yes", 1, 0),
+ eprod_edsd = ifelse(eprod_edsd == "(1) 1 = Yes", 1, 0),
  eprod_established = ifelse(eprod_established == "(1) 1 = Yes", 1, 0),
  #create indicators
- soc_pos_1 = ifelse(soc_pos == 1, 1, 0),
- soc_pos_2 = ifelse(soc_pos == 2, 1, 0),
- soc_pos_3 = ifelse(soc_pos == 3, 1, 0),
- soc_pos_4 = ifelse(soc_pos == 4, 1, 0),
- soc_pos_5 = ifelse(soc_pos == 5, 1, 0),
- soc_pos_6 = ifelse(soc_pos == 6, 1, 0),
- soc_pos_7 = ifelse(soc_pos == 7, 1, 0),
- soc_pos_8 = ifelse(soc_pos == 8, 1, 0),
- soc_pos_9 = ifelse(soc_pos == 9, 1, 0),
- soc_pos_10 = ifelse(soc_pos == 10, 1, 0),
  northeast = ifelse(region == "Northeast", 1, 0),
  midwest = ifelse(region == "Midwest", 1, 0),
  south = ifelse(region == "South", 1, 0),
@@ -261,17 +203,14 @@ wave_7 <- wave_7 %>%
 full <- bind_rows(wave_4, wave_7)
 
 #### MISSING DATA INFO ####
-# 43,621 observations are missing data
+# 2,045 observations are missing data
 sum(full$missing_any)
 # 1,199 observations are missing weights
 sum(full$missing_wght)
-# 67 observations are missing one of the potential outcome variables (might change if we modify)
+# 50 observations are missing one of the potential outcome variables (might change if we modify)
 sum(full$missing_outcome)
-# 43,144 observations are missing demographic info
+# 855 observations are missing demographic info
 sum(full$missing_dem)
-# 99% of this is coming from the social positionality variable (N = 43,144)
-# these are high in both wave 4 (N = 22,756) and wave 7 (N = 20,388)
-sum(is.na(full$soc_pos))
 
 #### SAVE R DATASET ####
 # Includes wave 4, wave 7, and the combined version
