@@ -1,0 +1,27 @@
+---
+title: "Exploratorium"
+author: "Anwesha Guha"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(here, rio, tidyverse)
+```
+
+
+Calibrate weights to standardize mean?
+```{r}
+summary(full$rep_weight_2)
+```
+
+
+survey package in R can handle weights
+- use BRR variance estimation (another option is linearization/Taylor Series)
+
+cross-sectional weights are specific to wave; single-wave is slightly different
+
+we have cross-sectional
+
+change in sample = use the all-waves weights
