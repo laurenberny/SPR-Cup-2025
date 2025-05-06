@@ -10,18 +10,59 @@ knitr::opts_chunk$set(echo = TRUE)
 pacman::p_load(here, rio, tidyverse)
 ```
 
+```{r}
+load(here("data", "combined_clean.RData"))
+```
 
-Calibrate weights to standardize mean?
+## Weight exploration
+
+The weighted tutorial notes to calibrate weights to standardize mean? I am just curious about what these weights look like, so let's see weight 2. Strange that there are so many NAs.
 ```{r}
 summary(full$rep_weight_2)
 ```
 
-
-survey package in R can handle weights
+Note for weights (from video):
+- `survey` package in R can handle weights
 - use BRR variance estimation (another option is linearization/Taylor Series)
+- cross-sectional weights are specific to wave; single-wave is slightly different. We have the cross-sectional weights since we are looking at overall characteristics of the Wave 4 vs Wave 7 samples. If we were interested in individual-level tracking, we'd use the all-waves weights, but that's not relevant to our RQs.
 
-cross-sectional weights are specific to wave; single-wave is slightly different
+## Omitting weights (as recommended by Clare)
 
-we have cross-sectional
+### Data prep
 
-change in sample = use the all-waves weights
+Create variable factors and strata.
+```{r}
+full <- full %>% 
+ dplyr::select(-contains("weight")) %>% 
+ mutate(across(2:7, as.factor)) %>% 
+ mutate(race_ethnicity = as.factor(paste0(race, ", ", ethnicity)),
+        strata_label = paste(region, race_ethnicity, sexuality, sex, age, sep = "_"))
+```
+
+Descriptive summary by strata
+```{r}
+full %>% 
+ group_by(strata_label) %>% 
+ summarise(tot = sum(eprod_edsd))
+```
+
+Remove NA values? What is the best method we want to use?
+
+I'm doing listwise just to continue on with the exploration.
+```{r}
+full %>% 
+ filter(wave == 4) %>% 
+ dplyr::select(1:8, strata_label) %>% #33,822
+ drop_na() %>% #33,389
+ group_by(strata_label) %>% 
+ summarise(tot = sum(eprod_edsd))
+```
+
+We have 278 strata if we keep all of these. Where are we narrowing?
+
+## Running the models
+
+From Evans et al. (2024): linear models are fit using restricted maximum likelihood estimation (RMLE) using the function lmer, and logistic models are fitted using a Laplace Approximation of maximum likelihood estimation using the funtion glmer.
+
+Our outcome is everyday/someday E-product usage (`eprod_edsd`).
+
