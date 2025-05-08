@@ -396,7 +396,371 @@ ggplot(dat_7, aes(x=mod1xbu)) +
 
 #### Ranks
 
-Okay, stopping here.
+
+```{r}
+###################################
+# create a data frame at the strata level (with the means of each variable)
+##################################
+
+# first, merge predictions with original data
+
+# create an id variable for merging in the tut dataframe
+dat_4$id <- seq.int(nrow(dat_4))
+
+# merge in m2bm_prob
+dat_4 <- merge(dat_4, m2m_prob_4, by="id")
+
+dat_4 <- dat_4 %>%
+  rename(
+    m2mfit=fit,
+    m2mupr= upr,
+    m2mlwr=lwr
+  )
+
+# merge in m2Bm
+dat_4 <- merge(dat_4, m2m_4, by="id")
+
+dat_4 <- dat_4 %>%
+  rename(
+    m2mfitL=fit,
+    m2muprL= upr,
+    m2mlwrL=lwr
+  )
+
+dat_4 <- dat_4 %>%
+  group_by(strata_label) %>%
+  mutate(strataN = n())
+ 
+
+# Collapse the data down to a stratum-level dataset 
+## NOTE: THIS MAKES 96 strata
+stratum_level <- aggregate(x=dat_4["eprod_edsd"], 
+                  by=dat_4[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN",
+                  "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")],
+                  FUN=mean)
+
+# NOTE: TAKE MEANS OF ESTIMATES? TRIED THIS AND GET 24 STRATA, BUT NOT SURE IF THIS IS THE ROUTE TO GO.
+stratum_level <- aggregate(x=dat_4[c("eprod_edsd", "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")], 
+                  by=dat_4[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN")],
+                  FUN=mean)
+
+# convert the outcome from a proportion to a percentage
+stratum_level$eprod_edsd <- stratum_level$eprod_edsd*100
+```
+
+```{r}
+###################################
+# create a data frame at the strata level (with the means of each variable)
+##################################
+
+# first, merge predictions with original data
+
+# create an id variable for merging in the tut dataframe
+dat_7$id <- seq.int(nrow(dat_7))
+
+# merge in m2bm_prob
+dat_7 <- merge(dat_7, m2m_prob_7, by="id")
+
+dat_7 <- dat_7 %>%
+  rename(
+    m2mfit=fit,
+    m2mupr= upr,
+    m2mlwr=lwr
+  )
+
+# merge in m2Bm
+dat_7 <- merge(dat_7, m2m_7, by="id")
+
+dat_7 <- dat_7 %>%
+  rename(
+    m2mfitL=fit,
+    m2muprL= upr,
+    m2mlwrL=lwr
+  )
+
+dat_7 <- dat_7 %>%
+  group_by(strata_label) %>%
+  mutate(strataN = n())
+ 
+
+# Collapse the data down to a stratum-level dataset 
+## NOTE: THIS MAKES 96 strata
+stratum_level_7 <- aggregate(x=dat_7["eprod_edsd"], 
+                  by=dat_7[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN",
+                  "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")],
+                  FUN=mean)
+
+# NOTE: TAKE MEANS OF ESTIMATES? TRIED THIS AND GET 24 STRATA, BUT NOT SURE IF THIS IS THE ROUTE TO GO.
+stratum_level_7 <- aggregate(x=dat_7[c("eprod_edsd", "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")], 
+                  by=dat_7[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN")],
+                  FUN=mean)
+
+# convert the outcome from a proportion to a percentage
+stratum_level_7$eprod_edsd <- stratum_level_7$eprod_edsd*100
+```
+
+Wave 4
+```{r}
+##############
+#Figure 2 / table 4
+#############
+
+# Panel B
+
+# note that (compared to Stata code), our predictions are already on the
+# probability scale
+
+# Rank the predicted stratum probabilities
+stratum_level <- stratum_level %>%
+  mutate(rank2=rank(m2mfit))
+
+# convert probabilities to percentages
+stratum_level$m2mfit <- stratum_level$m2mfit * 100
+stratum_level$m2mupr <- stratum_level$m2mupr * 100
+stratum_level$m2mlwr <- stratum_level$m2mlwr * 100
+
+# Plot the caterpillar plot of the predicted stratum means
+plot_4 <- ggplot(stratum_level, aes(y=m2mfit, x=rank2)) +
+  geom_point() +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Wave 4") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+# Generate list of 6 highest and 6 lowest predicted stratum means (for Table 4)
+stratum_level <- stratum_level[order(stratum_level$rank2),]
+head(stratum_level)
+tail(stratum_level)
+
+ranks <- stratum_level %>% 
+ dplyr::select(region, age, sex, race_ethnicity, strata_label, strataN, eprod_edsd, m2mfit, rank2) %>% 
+ arrange(-rank2)
+
+ranks
+```
+
+Wave 7
+```{r}
+##############
+#Figure 2 / table 4
+#############
+
+# Panel B
+
+# note that (compared to Stata code), our predictions are already on the
+# probability scale
+
+# Rank the predicted stratum probabilities
+stratum_level_7 <- stratum_level_7 %>%
+  mutate(rank2=rank(m2mfit))
+
+# convert probabilities to percentages
+stratum_level_7$m2mfit <- stratum_level_7$m2mfit * 100
+stratum_level_7$m2mupr <- stratum_level_7$m2mupr * 100
+stratum_level_7$m2mlwr <- stratum_level_7$m2mlwr * 100
+
+# Plot the caterpillar plot of the predicted stratum means
+plot_7 <- ggplot(stratum_level_7, aes(y=m2mfit, x=rank2)) +
+  geom_point() +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Wave 4") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+# Generate list of 6 highest and 6 lowest predicted stratum means (for Table 4)
+stratum_level_7 <- stratum_level_7[order(stratum_level_7$rank2),]
+head(stratum_level_7)
+tail(stratum_level_7)
+
+ranks <- stratum_level_7 %>% 
+ dplyr::select(region, age, sex, race_ethnicity, strata_label, strataN, eprod_edsd, m2mfit, rank2) %>% 
+ arrange(-rank2)
+
+ranks
+```
+
+
+```{r}
+stratum_level$wave <- 4
+stratum_level_7$wave <- 7
+
+plot_dat <- bind_rows(stratum_level, stratum_level_7)
+
+ggplot(plot_dat, aes(y=m2mfit, x=rank2)) +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  geom_point(aes(color= as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+ggplot(plot_dat, aes(y=m2mfit, x=strata_label)) +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  geom_point(aes(color= as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") + 
+  coord_flip() +
+  theme_bw()
+```
+
+```{r}
+plot_4 <- plot_dat %>% 
+ filter(wave == 4) %>% 
+ ggplot(aes(y = m2mfit, x = reorder(strata_label, m2mfit))) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") +
+  coord_flip() +
+  theme_bw()
+
+plot_7 <- plot_dat %>% 
+ filter(wave == 7) %>% 
+ ggplot(aes(y = m2mfit, x = reorder(strata_label, m2mfit))) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") +
+  coord_flip() +
+  theme_bw()
+
+```
+
+```{r}
+plot_both <- ggplot(
+  plot_dat %>%
+    filter(wave %in% c(4, 7)) %>%
+    group_by(strata_label) %>%
+    mutate(diff = m2mfit[wave == 7] - m2mfit[wave == 4]) %>%
+    ungroup() %>%
+    mutate(strata_label = reorder(strata_label, diff)),
+  aes(y = m2mfit, x = strata_label)
+) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") +
+  coord_flip() +
+  theme_bw()
+
+```
+
+```{r}
+ggplot(
+  {
+    top15_strata <- plot_dat %>%
+      filter(wave %in% c(4, 7)) %>%
+      pivot_wider(names_from = wave, values_from = m2mfit, names_prefix = "wave_") %>%
+      mutate(diff = wave_7 - wave_4) %>%
+      arrange(desc(diff)) %>%
+      slice_head(n = 15) %>%
+      pull(strata_label)
+
+    plot_dat %>%
+      filter(strata_label %in% top15_strata, wave %in% c(4, 7)) %>%
+      left_join(
+        plot_dat %>%
+          filter(wave %in% c(4, 7)) %>%
+          pivot_wider(names_from = wave, values_from = m2mfit, names_prefix = "wave_") %>%
+          mutate(diff = wave_7 - wave_4) %>%
+          select(strata_label, diff),
+        by = "strata_label"
+      ) %>%
+      mutate(strata_label = reorder(strata_label, diff))
+  },
+  aes(y = m2mfit, x = strata_label)
+) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank (Top 15 by Increase from Wave 4 to 7)") +
+  coord_flip() +
+  theme_bw()
+```
+
+
+
+
+```{r}
+###############
+# Figure 3
+###############
+# Panel C
+
+# create figure but on the log-odds scale
+m2Bu <- REsim(model2B)
+plotREsim(m2Bu)
+
+# This is more difficult to do on the probability scale
+
+# For this plot we follow a simulation-based approach to 
+# calculating the limits of the approximate 95% confidence intervals of our 
+# predictions. This involves simulating 1000 values for each predicted value.
+
+# Approximate as the model assumes no sampling covariability between the 
+# regression coefficients and the stratum random effect
+
+# duplicate stratum data *1000 (creating a new dataframe, stratumsim)
+stratumsim <- rbind(stratum_level, 
+                    stratum_level[rep(1:nrow(stratum_level),999),])
+
+# Generate the approximate standard error for the linear prediction on the
+# logit scale. We do this based on the difference between one estimated
+# confidence interval and the estimated fit, on the logit scale
+stratumsim$m2Bmse <- (stratumsim$m2BmfitL - stratumsim$m2BmlwrL)/1.96
+
+# specify initial value of the random-number seed (for replication purposes)
+set.seed(354612)
+
+# Generate the predicted stratum percentages based on the regression 
+# coefficients and the predicted stratum random effect and factoring in 
+# prediction uncertainty
+stratumsim$m2Bpsim <- 100*invlogit(stratumsim$m2BmfitL + 
+                                  rnorm(24000, mean=0, sd=stratumsim$m2Bmse))
+
+# Generate the predicted stratum percentages ignoring the predicted stratum 
+# effect
+stratumsim$m2BpAsim <- 100*invlogit(stratumsim$m2BmF)
+
+# Generate the difference in the predicted stratum percentages due to the 
+# predicted stratum effect
+stratumsim$m2BpBsim <- stratumsim$m2Bpsim - stratumsim$m2BpAsim
+
+# sort the data by strata
+stratumsim <- stratumsim %>% 
+ arrange(strata)
+
+# collapse the data down to stratum level, generate mean and SE variables,
+# then use these to generate rank and lower and upper limits of the approximate
+# 95% confidence intervals of the difference in predicted stratum percentates 
+# due to interaction variables.
+stratumsim2 <- stratumsim %>%
+  group_by(strata) %>%
+  summarise(mean=mean(m2BpBsim), std=sd(m2BpBsim)) %>%
+  mutate(rank=rank(mean)) %>%
+  mutate(hi=(mean + 1.96*std)) %>%
+  mutate(lo=(mean - 1.96*std))
+
+# plot the caterpillar plot of the predicted stratum percentage differences
+ggplot(stratumsim2, aes(x=rank, y=mean)) +
+  geom_hline(yintercept=0, color="red", linewidth=1) +
+  geom_point(size=3) +
+  geom_pointrange(aes(ymin=lo, ymax=hi)) + 
+  xlab("Stratum Rank") +
+  ylab("Difference in predicted EDSD e-product user due to interactions") +
+  theme_bw()
+```
 
 
 
