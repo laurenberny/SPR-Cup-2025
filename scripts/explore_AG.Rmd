@@ -101,6 +101,8 @@ dat <- dat %>%
 
 
 Let's see how many individuals we have in each strata (and if any are empty).
+
+
 ```{r}
 dat %>% 
  group_by(strata_label) %>% 
@@ -112,7 +114,7 @@ We might consider doing some combining. At the very least, let's combine "Northe
 
 ```{r}
 dat <- dat %>% 
- mutate(strata_label = case_when(
+ mutate(strata_label2 = case_when(
     strata_label %in% c("Northeast_Other_Male_45+", "West_Other_Male_45+") ~ "NortheastWest_Other_Male_45+",
     TRUE ~ strata_label
   ))
@@ -137,20 +139,60 @@ Our outcome is everyday/someday E-product usage (`eprod_edsd`).
 #### Null model
 
 ```{r}
+dat_4 <- dat %>% 
+ filter(wave == 4)
+
+dat_7 <- dat %>% 
+ filter(wave == 7)
+```
+
+```{r}
+dat_4 %>% 
+ group_by(strata_label) %>% 
+ summarize(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+```{r}
+dat_7 %>% 
+ group_by(strata_label) %>% 
+ summarize(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+
+```{r}
 library(lme4)
 
-mod1 <- glmer(eprod_edsd ~ (1 | strata_label), 
-               data = dat,
+mod1_4 <- glmer(eprod_edsd ~ (1 | strata_label), 
+               data = dat_4,
                family = binomial(link = "logit"))
 
-summary(mod1)
+summary(mod1_4)
 
 # Predict the fitted linear predictor (on the probability scale)
-dat$mod1xbu <- predict(mod1, type = "response")
+dat_4$mod1xbu <- predict(mod1_4, type = "response")
 
 # Predict the linear predictor for the fixed portion of the model only
 # (only the intercept, so this is just the weighted grand mean probability)
-dat$mod1xb <- predict(mod1, type="response", re.form=NA)
+dat_4$mod1xb <- predict(mod1_4, type="response", re.form=NA)
+```
+
+```{r}
+library(lme4)
+
+mod1_7 <- glmer(eprod_edsd ~ (1 | strata_label), 
+               data = dat_7,
+               family = binomial(link = "logit"))
+
+summary(mod1_7)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat_7$mod1xbu <- predict(mod1_7, type = "response")
+
+# Predict the linear predictor for the fixed portion of the model only
+# (only the intercept, so this is just the weighted grand mean probability)
+dat_7$mod1xb <- predict(mod1_7, type="response", re.form=NA)
 ```
 
 #### Additive model
@@ -158,52 +200,144 @@ dat$mod1xb <- predict(mod1, type="response", re.form=NA)
 ```{r}
 library(merTools)
 
-mod2 <- glmer(eprod_edsd ~ region + race_ethnicity + sex + age + (1 | strata_label),
-                data = dat,
-                family = binomial(link = "logit"))
+mod2_4 <- glmer(eprod_edsd ~ region + race_ethnicity + sex + age + (1 | strata_label),
+                data = dat_4,
+                family = binomial(link = "logit")) #change reference to White, Male, 18-24, Northeast or West
 
-summary(mod2)
+summary(mod2_4)
 
 # Predict the fitted linear predictor (on the probability scale)
-dat$mod2m <- predict(mod2, type = "response")
+dat_4$mod2m <- predict(mod2_4, type = "response")
 
 
 # predict the fitted linear predictor, and confidence intervals, on the logit 
 # scale
-m2m <- predictInterval(mod2, level=0.95, include.resid.var=FALSE)
+m2m_4 <- predictInterval(mod2_4, level=0.95, include.resid.var=FALSE)
 # create a new id variable for this newly created dataframe
-m2m <- mutate(m2m, id=row_number())
+m2m_4 <- mutate(m2m_4, id=row_number())
 
 # on the logit scale, predict the linear predictor for the fixed portion of the
 # model only
-dat$m2mF <- predict(mod2, re.form=NA)
+dat_4$m2mF <- predict(mod2_4, re.form=NA)
 
 # predict the fitted linear predictor, and confidence intervals, on the 
 # probability scale
-m2m_prob <- predictInterval(mod2, level=0.95, include.resid.var=FALSE, 
+m2m_prob_4 <- predictInterval(mod2_4, level=0.95, include.resid.var=FALSE, 
                              type="probability") 
 # note that, unlike the stata code, this code combines the uncertainty from the
 # fixed and random parts. This saves a step later compared to the Stata code.
 
 # create a new id variable for this newly created dataframe
-m2m_prob <- mutate(m2m_prob, id=row_number())
+m2m_prob_4 <- mutate(m2m_prob_4, id=row_number())
 
 # predict the fitted linear predictor, on the probability scale, for the fixed 
 # portion of the model only
-dat$m2xb <- predict(mod2, re.form=NA, type="response")
+dat_4$m2xb <- predict(mod2_4, re.form=NA, type="response")
 
 #predict the stratum random effects and associated standard errors
-m2u <- REsim(mod2)
+m2u_4 <- REsim(mod2_4)
 
 ```
 
 ```{r}
-vc1a <-as.data.frame(VarCorr(mod1))
-vc1b <-as.data.frame(VarCorr(mod2))
+library(merTools)
+
+mod2_7 <- glmer(eprod_edsd ~ region + race_ethnicity + sex + age + (1 | strata_label),
+                data = dat_7,
+                family = binomial(link = "logit"))
+
+summary(mod2_7)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat_7$mod2m <- predict(mod2_7, type = "response")
+
+
+# predict the fitted linear predictor, and confidence intervals, on the logit 
+# scale
+m2m_7 <- predictInterval(mod2_7, level=0.95, include.resid.var=FALSE)
+# create a new id variable for this newly created dataframe
+m2m_7 <- mutate(m2m_7, id=row_number())
+
+# on the logit scale, predict the linear predictor for the fixed portion of the
+# model only
+dat_7$m2mF <- predict(mod2_7, re.form=NA)
+
+# predict the fitted linear predictor, and confidence intervals, on the 
+# probability scale
+m2m_prob_7 <- predictInterval(mod2_7, level=0.95, include.resid.var=FALSE, 
+                             type="probability") 
+# note that, unlike the stata code, this code combines the uncertainty from the
+# fixed and random parts. This saves a step later compared to the Stata code.
+
+# create a new id variable for this newly created dataframe
+m2m_prob_7 <- mutate(m2m_prob_7, id=row_number())
+
+# predict the fitted linear predictor, on the probability scale, for the fixed 
+# portion of the model only
+dat_7$m2xb <- predict(mod2_7, re.form=NA, type="response")
+
+#predict the stratum random effects and associated standard errors
+m2u_7 <- REsim(mod2_7)
+
+```
+
+```{r}
+vc1a <-as.data.frame(VarCorr(mod1_7))
+vc1b <-as.data.frame(VarCorr(mod2_7))
 
 PCV1 <- ((vc1a[1,4] - vc1b[1,4]) / vc1a[1,4])*100
 PCV1 #89.28
+
+# Models for Wave 4 = 79.74
+# Models for Wave 7 = 92.37
 ```
+
+```{r}
+
+library(Metrics)
+## Wave 7
+
+# Calculate the area under the receiver operating characteristic (ROC) curve
+# for model 2a - based on intercept and stratum random effects
+AUC2A <- auc(dat_7$eprod_edsd, dat_7$mod1xbu)
+
+#for model 2A - based on only the fixed portion of the model
+AUC2AF <- auc(dat_7$eprod_edsd, dat_7$mod1xb)
+
+#for model 2b - based on intercept, main effects, and stratum random effects
+AUC2B <- auc(dat_7$eprod_edsd, dat_7$m2mF)
+#for model 2b - based on the fixed portion of the model (main effects)
+AUC2BF <- auc(dat_7$eprod_edsd, dat_7$m2xb) 
+
+#output the AUC calculations
+AUC2A
+AUC2AF
+AUC2B
+AUC2BF
+```
+
+```{r}
+## Wave 4
+
+# Calculate the area under the receiver operating characteristic (ROC) curve
+# for model 2a - based on intercept and stratum random effects
+AUC2A <- auc(dat_4$eprod_edsd, dat_4$mod1xbu)
+
+#for model 2A - based on only the fixed portion of the model
+AUC2AF <- auc(dat_4$eprod_edsd, dat_4$mod1xb)
+
+#for model 2b - based on intercept, main effects, and stratum random effects
+AUC2B <- auc(dat_4$eprod_edsd, dat_4$m2mF)
+#for model 2b - based on the fixed portion of the model (main effects)
+AUC2BF <- auc(dat_4$eprod_edsd, dat_4$m2xb) 
+
+#output the AUC calculations
+AUC2A
+AUC2AF
+AUC2B
+AUC2BF
+```
+
 
 ### Visualizations
 
@@ -211,7 +345,7 @@ PCV1 #89.28
 
 ```{r}
 # Histogram of the observed stratum means (and mean of means)
-dat %>% 
+dat_4 %>% 
  group_by(strata_label) %>% 
  summarise(avg = mean(eprod_edsd)) %>% 
  ggplot(., aes(avg)) +
@@ -224,13 +358,39 @@ dat %>%
 
 
 # Histogram of the predicted stratum means
-ggplot(dat, aes(x=mod1xbu)) + 
+ggplot(dat_4, aes(x=mod1xbu)) + 
   geom_histogram(aes(y = after_stat(count / sum(count))), fill = "gray") + 
   scale_y_continuous(labels=scales::percent) +
   labs(title = "Predicted Eproduct Use",
        x = "Predicted Eprod Use",
        y = "Percent of Strata") +
-  geom_vline(aes(xintercept=0.0923))+ #this is the precision weighted grand mean
+  geom_vline(aes(xintercept=0.07583355))+ #this is the precision weighted grand mean
+  theme_minimal()
+```
+
+
+```{r}
+# Histogram of the observed stratum means (and mean of means)
+dat_7 %>% 
+ group_by(strata_label) %>% 
+ summarise(avg = mean(eprod_edsd)) %>% 
+ ggplot(., aes(avg)) +
+ geom_histogram(fill = "gray") +
+  labs(title = "Observed Eproduct Use",
+       x = "Observed Eprod Use",
+       y = "Percent of Strata") +
+ geom_vline(aes(xintercept = mean(avg))) +
+ theme_minimal()
+
+
+# Histogram of the predicted stratum means
+ggplot(dat_7, aes(x=mod1xbu)) + 
+  geom_histogram(aes(y = after_stat(count / sum(count))), fill = "gray") + 
+  scale_y_continuous(labels=scales::percent) +
+  labs(title = "Predicted Eproduct Use",
+       x = "Predicted Eprod Use",
+       y = "Percent of Strata") +
+  geom_vline(aes(xintercept=0.1078718))+ #this is the precision weighted grand mean
   theme_minimal()
 ```
 
