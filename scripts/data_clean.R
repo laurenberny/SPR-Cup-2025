@@ -17,7 +17,7 @@ lab_4 <- c(
  "ethnicity" = "R04R_A_HISP_IMP",
  "race" = "R04R_A_RACECAT3_IMP",
  "sexuality" = "R04R_A_SEXORIENT2",
- "sex" = "R04R_A_SEX",
+ "sex" = "R04R_A_SEX_IMP",
  "age" = "R04R_A_AGECAT6",
  "eprod_edsd" = "R04R_A_CUR_EDSD_EPRODS",
  "eprod_established" = "R04R_A_CUR_ESTD_EPRODS",
@@ -211,6 +211,13 @@ sum(full$missing_wght)
 sum(full$missing_outcome)
 # 855 observations are missing demographic info
 sum(full$missing_dem)
+
+#### ADD COMBINED RACE/ETHNICITY ####
+full <- full %>% 
+ mutate(combined_race = as.factor(case_when(race == "Black" & ethnicity == "Not Hispanic" ~ "Black",
+                                            race == "White" & ethnicity == "Not Hispanic" ~ "White",
+                                            ethnicity == "Hispanic" ~ "Hispanic",
+                                            TRUE ~ "Other")))
 
 #### SAVE R DATASET ####
 # Includes wave 4, wave 7, and the combined version
