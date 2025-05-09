@@ -214,10 +214,10 @@ sum(full$missing_dem)
 
 #### ADD COMBINED RACE/ETHNICITY ####
 full <- full %>% 
- mutate(combined_race = as.factor(case_when(race == "Black" & ethnicity == "Not Hispanic" ~ "Black",
-                                            race == "White" & ethnicity == "Not Hispanic" ~ "White",
-                                            ethnicity == "Hispanic" ~ "Hispanic",
-                                            TRUE ~ "Other")))
+ mutate(race_ethnicity = as.factor(case_when(race == "Black" & ethnicity == "Not Hispanic" ~ "Black",
+                                             race == "White" & ethnicity == "Not Hispanic" ~ "White",
+                                             ethnicity == "Hispanic" ~ "Hispanic",
+                                             TRUE ~ "Other")))
 
 #### SAVE R DATASET ####
 # Includes wave 4, wave 7, and the combined version
