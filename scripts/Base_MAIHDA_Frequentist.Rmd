@@ -579,3 +579,20 @@ top15_plot <- ggplot(
   )
 ```
 
+Facet by region
+PCV = additively patterned between, but still need to look at within it 
+Calculate VPC
+depression MAIHDA faceted their visualizations
+
+Since that 18-24 group is so high, I wonder if we should look at prevalence of tobacco free policies on campuses as another aspect… will regions with less policies see higher use? I don’t know enough about the effectiveness of those policies to reduce smoking among young people so maybe that’s too far of a stretch.
+
+color-code age
+Change factor levels
+1-2 min about dataset & regions
+hype team for MAIHDA & why it's better
+policy & implications
+ACES framework
+
+predicted probabilities
+prevalence rates 
+
