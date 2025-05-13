@@ -1,0 +1,189 @@
+---
+title: "Unweighted Bayesian Models"
+author: "Lauren Berny"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(brms)
+library(cmdstanr)
+library(dplyr)
+library(marginaleffects)
+library(here)
+
+# Note: I had to install cmdStan - ran install_cmdstan() after loading cmdstanr; 
+# if needed cmdstanr is downloaded via github remotes::install_github("stan-dev/cmdstanr")
+```
+
+# Load Data
+
+```{r}
+load(here("data", "combined_clean.RData"))
+```
+
+
+# Narrow to Analytic Samples
+
+```{r}
+# Wave 4
+
+dat_wv4 <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==4) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat_wv4 <- dat_wv4 %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+n_distinct(dat_wv4$strata)
+
+# Wave 7
+
+dat_wv7 <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==7) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat_wv7 <- dat_wv7 %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+n_distinct(dat_wv7$strata)
+```
+
+# Null Models
+
+## Define priors
+
+```{r}
+null_priors <- c(
+  # logit scale
+  prior(normal(0, 2), class = Intercept),
+  # variance components
+  prior(inv_gamma(2, 2), class = sd))
+```
+
+
+## Wave 4
+
+
+```{r}
+set.seed(828) 
+
+pyMDE_m1_unweighted <- 
+  brm(as.factor(eprod_edsd) ~ 1 + (1 | strata),
+      data = dat_wv4,
+      family = bernoulli(link="logit"),
+      prior = null_priors,
+      chains = 4,
+      iter = 8000,
+      warmup = 4000,
+      thin = 1,
+      threads = threading(2),
+      cores = 4,
+      backend = "cmdstanr")
+# save the model
+saveRDS(pyMDE_m1_unweighted, 
+        "wave4_nullmod_unweighted.rds")
+
+```
+
+
+
+## Wave 7
+
+```{r}
+set.seed(828) 
+
+pyMDE_m3_unweighted <- 
+  brm(as.factor(eprod_edsd) ~ 1 + (1 | strata),
+      data = dat_wv7,
+      family = bernoulli(link="logit"),
+      prior = null_priors,
+      chains = 4,
+      iter = 8000,
+      warmup = 4000,
+      thin = 1,
+      threads = threading(2),
+      cores = 4,
+      backend = "cmdstanr")
+# save the model
+saveRDS(pyMDE_m3_unweighted, 
+        "wave7_nullmod_unweighted.rds")
+```
+
+
+# Full Models
+
+## Define priors
+
+```{r}
+full_priors <- c(
+  # logit scale
+  prior(normal(0, 2), class = Intercept),
+  prior(normal(0, 2), class = b),
+  # variance component
+  prior(inv_gamma(2, 2), class = sd))
+```
+
+
+## Wave 4
+
+
+```{r}
+set.seed(828) 
+
+pyMDE_m2_unweighted <- 
+  brm(as.factor(eprod_edsd) ~ 1 + region + age + sex + race_ethnicity + (1 | strata),
+      data = dat_wv4,
+      family = bernoulli(link="logit"),
+      prior = full_priors,
+      chains = 4,
+      iter = 8000,
+      warmup = 4000,
+      thin = 1,
+      threads = threading(2),
+      cores = 4,
+      backend = "cmdstanr")
+# save the model
+saveRDS(pyMDE_m2_unweighted, 
+        "wave4_fullmod_unweighted.rds")
+```
+
+
+## Wave 7
+
+```{r}
+set.seed(828) 
+
+pyMDE_m4_unweighted <- 
+  brm(as.factor(eprod_edsd) ~ 1 + region + age + sex + race_ethnicity + (1 | strata),
+      data = dat_wv7,
+      family = bernoulli(link="logit"),
+      prior = full_priors,
+      chains = 4,
+      iter = 8000,
+      warmup = 4000,
+      thin = 1,
+      threads = threading(2),
+      cores = 4,
+      backend = "cmdstanr")
+# save the model
+saveRDS(pyMDE_m4_unweighted, 
+        "wave7_fullmod_unweighted.rds")
+```
