@@ -186,4 +186,205 @@ pyMDE_m4_unweighted <-
 # save the model
 saveRDS(pyMDE_m4_unweighted, 
         "wave7_fullmod_unweighted.rds")
+
+```
+
+
+# Predictions and Stuff
+
+## Load data
+
+```{r}
+pyMDE_m2_unweighted <- readRDS(here("models", "Wave 4", "Unweighted Bayesian", "wave4_fullmod_unweighted.RDS"))
+pyMDE_m4_unweighted <- readRDS(here("models", "Wave 7", "Unweighted Bayesian", "wave7_fullmod_unweighted.RDS"))
+load(here("data", "combined_clean.RData"))
+```
+
+
+## Wave 7
+
+### Predictions for strata
+
+#### Method 1
+
+**For intercept-only model per strata, "Raw" strata effects**
+
+**What it does:**
+Uses only the intercept:
+Fixed-effect intercept (global_intercept)
+Strata-specific random intercept (ranef_estimate)
+Ignores all covariates (region, age, sex, race_ethnicity)
+
+**Useful for:**
+Getting a baseline predicted probability per strata
+Captures between-strata variation without adjusting for covariates
+
+**Not accounting for:**
+Differences in covariate distributions across strata
+Any predictors in the fixed-effect part of the model
+
+```{r}
+# 1. Extract random intercept estimates for strata
+ranef_vals <- ranef(pyMDE_m4_unweighted)$strata
+strata_estimates <- ranef_vals[, "Estimate", "Intercept"]
+
+# 2. Get the global (fixed) intercept
+fixef_vals <- fixef(pyMDE_m4_unweighted)
+global_intercept <- fixef_vals["Intercept", "Estimate"]
+
+# 3. Combine to get the linear predictor and predicted probability
+strata_probs <- data.frame(
+  strata = rownames(ranef_vals),
+  ranef_estimate = strata_estimates,
+  linear_predictor = strata_estimates + global_intercept,
+  predicted_prob = plogis(strata_estimates + global_intercept)
+)
+```
+
+#### Method 2
+
+**For full model adjusted per strata covariates, Model’s expected % EDSD use for that strata’s profile**
+
+**Computes predicted probabilities using:**
+All fixed effects (region, age, sex, etc.)
+The random intercept for each strata (re_formula = NULL)
+newdata_strata includes 1 row per strata, but includes the covariates
+
+**Useful for:**
+Estimating adjusted probabilities per strata, reflecting the model’s fixed effects
+Showing what the model expects for each strata given its covariate values
+
+**Depends on:**
+The actual covariates used for each strata in newdata_strata
+May smooth over strata-level differences if covariates explain a lot
+
+```{r}
+dat_wv7 <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==7) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat_wv7 <- dat_wv7 %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+newdata_strata <- dat_wv7 %>%
+ dplyr::select(strata, region, age, sex, race_ethnicity) %>% 
+ unique()
+
+preds <- fitted(pyMDE_m4_unweighted,
+                newdata = newdata_strata,
+                re_formula = NULL,  # include random effects
+                summary = TRUE)     # get mean and CI
+
+preds_df <- as.data.frame(preds)
+
+strata_preds <- cbind.data.frame(newdata_strata, preds_df)
+
+strata_preds <- strata_preds %>% 
+ mutate(strata_label = paste(region, race_ethnicity, sex, age, sep = ", "))
+```
+
+### Graphs for second version of preds
+
+```{r}
+strata_preds %>% 
+ ggplot(aes(y = Estimate, x = reorder(strata_label, Estimate))) +
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.2, color = "black") +  # Black error bars
+  geom_point(shape = 21, fill = "purple3", color = "black", size = 2) +  # Colored points
+  ylab("Predicted Percent EDSD E−Product User, Model 2 for Wave 7") +
+  xlab("Strata") +
+  coord_flip() +
+  theme_bw()
+
+observed_strata_percents <- dat_wv7 %>%
+  group_by(strata) %>%
+  summarise(
+    percent_using = mean(eprod_edsd, na.rm = TRUE) * 100,
+    n = n()
+  ) %>%
+  ungroup()
+
+ 
+compare_preds_obs <- left_join(strata_preds, observed_strata_percents, by = "strata")
+
+compare_preds_obs %>% 
+ mutate(diff = (Estimate*100) - percent_using) %>% 
+ arrange(desc(abs(diff)))
+```
+
+
+
+
+## Wave 4
+
+
+### Strata Preds
+
+Used second version for calculating preds.
+
+```{r}
+dat_wv4 <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==4) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat_wv4 <- dat_wv4 %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+newdata_strata4 <- dat_wv4 %>%
+ dplyr::select(strata, region, age, sex, race_ethnicity) %>% 
+ unique()
+
+preds_4 <- fitted(pyMDE_m2_unweighted,
+                newdata = newdata_strata4,
+                re_formula = NULL,  # include random effects
+                summary = TRUE)     # get mean and CI
+
+preds_df4 <- as.data.frame(preds_4)
+
+strata_preds4 <- cbind.data.frame(newdata_strata4, preds_df4)
+
+strata_preds4 <- strata_preds4 %>% 
+ mutate(strata_label = paste(region, race_ethnicity, sex, age, sep = ", "))
+```
+
+### Graphs for Second Version of Preds
+
+```{r}
+strata_preds4 %>% 
+ ggplot(aes(y = Estimate, x = reorder(strata_label, Estimate))) +
+  geom_errorbar(aes(ymin = Q2.5, ymax = Q97.5), width = 0.2, color = "black") +  # Black error bars
+  geom_point(shape = 21, fill = "purple3", color = "black", size = 2) +  # Colored points
+  ylab("Predicted Percent EDSD E−Product User, Model 2 for Wave 7") +
+  xlab("Strata") +
+  coord_flip() +
+  theme_bw()
+
+
+observed_strata_percents4 <- dat_wv4 %>%
+  group_by(strata) %>%
+  summarise(
+    percent_using = mean(eprod_edsd, na.rm = TRUE) * 100,
+    n = n()
+  ) %>%
+  ungroup()
+
+ 
+compare_preds_obs4 <- left_join(strata_preds4, observed_strata_percents4, by = "strata")
+
+compare_preds_obs4 %>% 
+ mutate(diff = (Estimate*100) - percent_using) %>% 
+ arrange(desc(abs(diff)))
 ```
