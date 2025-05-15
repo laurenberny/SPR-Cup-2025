@@ -1,0 +1,127 @@
+---
+title: "Wave7_NullMod_DesignWeighted"
+author: "Anwesha Guha"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(csSampling)
+library(dplyr)
+library(brms)
+library(rstan)
+library(survey)
+library(cmdstanr)
+library(tidyverse)
+library(ggeffects)
+library(lme4)
+library(merTools)
+library(labelled)
+library(sjPlot)
+library(Metrics)
+library(janitor)
+library(here)
+library(rio)
+```
+
+# Wave 7
+```{r}
+load(here("data", "combined_clean.RData"))
+```
+
+```{r}
+path_priors <- c(
+  # logit scale
+   prior(normal(0, 2), class = Intercept),
+  #prior(normal(0, 2), class = b),
+  # variance component
+  prior(inv_gamma(2, 2), class = sd))
+```
+
+```{r}
+dat <- full %>% 
+ dplyr::mutate(across(region:age, as.factor)) %>%
+ filter(wave==7) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat <- dat %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+n_distinct(dat$strata)
+```
+
+```{r}
+dat$wt_norm <- dat$weight*(length(dat$weight)/sum(dat$weight))
+
+design_sp2 <- svrepdesign(
+  data = dat,
+  type = "Fay",
+  rho = 0.3,
+  repweights = dat[, grep("^rep_weight_[0-9]+$", names(dat))],
+  weights = ~wt_norm,
+  mse = TRUE)
+
+# Check mean of weights from subpop survey design object
+summary(design_sp2$pweights)
+# Calibrate weights so the mean=1
+design_sp2 <- calibrate(design_sp2,
+                        ~ 1,
+                        c(`(Intercept)` = length(design_sp2$pweights)),
+                        compress = FALSE)
+# Check mean after calibration
+summary(design_sp2$pweights) # Mean=1
+```
+
+```{r}
+# Write and save Stan file
+stancode_pyMDE_m3 <- make_stancode(
+  brmsformula(
+    as.factor(eprod_edsd)| weights(wt_norm) ~ 
+      1 + (1 | strata)
+    ), 
+  data = dat,
+  prior = path_priors,
+  family = bernoulli(link="logit"),
+  save_model = "brms_pyMDE_m3.stan")
+# Load the Stan file
+modbrms_pyMDE_m3 <- stan_model("brms_pyMDE_m3.stan")
+
+# Set up data
+databrms_pyMDE_m3 <- make_standata(
+  brmsformula(
+    as.factor(eprod_edsd)| weights(wt_norm) ~ 
+      1 + (1 | strata)
+    ),
+  data = design_sp2$variables,
+  prior = path_priors,
+  family = bernoulli(link="logit"))
+# Set Stan model weights = survey design weights
+databrms_pyMDE_m3$weights <- design_sp2$pweights
+
+
+set.seed(828) # for reproducible results
+pyMDE_m3 <- cs_sampling(
+  svydes = design_sp2, # use the subpop-defined survey object
+  mod_stan = modbrms_pyMDE_m3,
+  data_stan = databrms_pyMDE_m3,
+  ctrl_stan = list(chains = 4,
+                   iter = 8000, # 16,000 total iterations (8,000 post-warmup)
+                   warmup = 4000, # 8,000 warmups
+                   prior = path_priors,
+                   backend = "cmdstanr",
+                   threads = threading(2),
+                   thin = 1),
+  rep_design = TRUE,
+  sampling_args = list(cores = 4))
+```
+
+```{r}
+saveRDS(pyMDE_m3, file = "wave7_nullmod.RDS")
+```
