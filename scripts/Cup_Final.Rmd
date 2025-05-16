@@ -1,0 +1,95 @@
+---
+title: "Final Analysis for the WIN"
+author: "Waddling the PATH"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(rio,
+               here,
+               tidyverse,
+               bayesplot,
+               brms)
+```
+
+# Read in data and models
+
+## Data
+
+```{r}
+## Data
+load(here("data", "combined_clean.RData"))
+
+dat <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==4) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat <- dat %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+n_distinct(dat$strata)
+```
+
+## Models
+
+```{r}
+## Wave 4
+w4_null <- readRDS(here("models/Wave 4", "wave4_nullmod.RDS"))
+w4_full <- readRDS(here("models/Wave 4", "wave4_fullmod.RDS"))
+w4_null_uw <- readRDS(here("models/Wave 4/Unweighted Bayesian", "wave4_nullmod_unweighted.RDS"))
+w4_full_uw <- readRDS(here("models/Wave 4/Unweighted Bayesian", "wave4_fullmod_unweighted.RDS"))
+
+## Wave 7
+w7_null <- readRDS(here("models/Wave 7", "wave7_nullmod.RDS"))
+w7_full <- readRDS(here("models/Wave 7", "wave7_fullmod.RDS"))
+w7_null_uw <- readRDS(here("models/Wave 7/Unweighted Bayesian", "wave7_nullmod_unweighted.RDS"))
+w7_full_uw <- readRDS(here("models/Wave 7/Unweighted Bayesian", "wave7_fullmod_unweighted.RDS"))
+```
+
+
+# Model Decisions
+
+```{r}
+logit2prob <- function(logit) {
+  odds = exp(logit)
+  prob = odds / (1 + odds)
+  return(prob)
+}
+```
+
+
+```{r}
+wave4_full_sum = as.data.frame(rstan::summary(w4_full[["stan_fit"]],
+                                probs = c(0.025, 0.975))$summary)
+
+# histogram of r-hat values
+bayesplot::mcmc_rhat_hist(wave4_full_sum$Rhat) +
+  ggtitle("Histogram of model parameter r-hat values",
+          "Full Model") +
+  theme(axis.title = element_text(face="bold")) +
+  labs(y="Frequency", x="r-hat values")
+
+wave4_full_array <- as.array(w4_full)
+
+dimnames(wave4_full_array)[[3]][c(1:9, 11, 205)] <-
+  c("region2", "region3", "region4",
+    "age2", "age3", "female", 
+    "race2", "race3", "race4",
+    "Between-group std. dev.", "b_Intercept")
+
+parameters <- dimnames(wave4_full_array)[[3]][c(1:9, 11, 205)]
+
+log_lik_m1<- loo::extract_log_lik(w4_null[["stan_fit"]])
+```
+
+
+# Visualizations

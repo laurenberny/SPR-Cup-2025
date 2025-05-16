@@ -1,0 +1,771 @@
+---
+title: "Exploratorium"
+author: "Anwesha Guha"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(here, rio, tidyverse)
+```
+
+```{r}
+load(here("data", "combined_clean.RData"))
+```
+
+## Weight exploration
+
+The weighted tutorial notes to calibrate weights to standardize mean? I am just curious about what these weights look like, so let's see weight 2. Strange that there are so many NAs.
+```{r}
+summary(full$rep_weight_2) #1,199
+length(unique(full$id)) #63,181 weights -- #43,932 IDs
+```
+
+Note for weights (from video):
+- `survey` package in R can handle weights
+- use BRR variance estimation (another option is linearization/Taylor Series)
+- cross-sectional weights are specific to wave; single-wave is slightly different. We have the cross-sectional weights since we are looking at overall characteristics of the Wave 4 vs Wave 7 samples. If we were interested in individual-level tracking, we'd use the all-waves weights, but that's not relevant to our RQs.
+
+## Omitting weights
+
+### Data exploration
+
+Create variable factors and strata.
+```{r}
+full %>% 
+ dplyr::select(-contains("weight")) %>% 
+ mutate(across(2:7, as.factor)) %>% 
+ mutate(race_ethnicity = as.factor(paste0(race, ", ", ethnicity)),
+        strata_label = paste(region, race_ethnicity, sexuality, sex, age, sep = "_")) %>% 
+ head()
+```
+
+Descriptive summary by strata
+```{r}
+full %>% 
+  dplyr::select(-contains("weight")) %>% 
+ mutate(across(2:7, as.factor)) %>% 
+ mutate(race_ethnicity = as.factor(paste0(race, ", ", ethnicity)),
+        strata_label = paste(region, race_ethnicity, sexuality, sex, age, sep = "_")) %>% 
+ group_by(strata_label) %>% 
+ summarise(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+Remove NA values? What is the best method we want to use?
+
+I'm doing listwise just to continue on with the exploration.
+```{r}
+full %>% 
+ dplyr::select(-contains("weight")) %>% 
+ mutate(across(2:7, as.factor)) %>% 
+ mutate(race_ethnicity = as.factor(paste0(race, ", ", ethnicity)),
+        strata_label = paste(region, race_ethnicity, sexuality, sex, age, sep = "_")) %>% 
+ filter(wave == 4) %>% 
+ dplyr::select(1:8, strata_label) %>% #33,822
+ drop_na() %>% #33,389
+ group_by(strata_label) %>% 
+ summarise(tot = sum(eprod_edsd))
+```
+
+We have 278 strata if we keep all of these. Not use sexual orientation b/c not imputed. Omit that from analysis. I'll take out this variable and modify the race/ethnicity coding.
+
+### Data prep
+
+```{r}
+dat <- full %>% 
+ dplyr::select(-contains("weight")) %>% 
+ mutate(across(region:age, as.factor)) %>% 
+ mutate(race_ethnicity = as.factor(case_when(race == "Black" & ethnicity == "Not Hispanic" ~ "Black",
+                                   race == "White" & ethnicity == "Not Hispanic" ~ "White",
+                                   ethnicity == "Hispanic" ~ "Hispanic",
+                                   TRUE ~ "Other"))) %>% 
+ dplyr::select(id, #ID
+        wave, #wave
+        region, race_ethnicity, sex, age, #strata
+        eprod_edsd #outcome
+        ) 
+#64,623 observations
+```
+
+```{r}
+dat <- dat %>% 
+ drop_na() #64,539
+
+#84 observations with any missing values
+
+dat <- dat %>% 
+ mutate(strata_label = as.factor(paste(region, race_ethnicity, sex, age, sep = "_")))
+```
+
+
+Let's see how many individuals we have in each strata (and if any are empty).
+
+
+```{r}
+dat %>% 
+ group_by(strata_label) %>% 
+ summarize(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+We might consider doing some combining. At the very least, let's combine "Northeast_Other_Male_45+" and "West_Other_Male_45+" so the minimum n of any given strata is 5.
+
+```{r}
+dat <- dat %>% 
+ mutate(strata_label2 = case_when(
+    strata_label %in% c("Northeast_Other_Male_45+", "West_Other_Male_45+") ~ "NortheastWest_Other_Male_45+",
+    TRUE ~ strata_label
+  ))
+```
+
+Check if it worked.
+```{r}
+dat %>% 
+ group_by(strata_label) %>% 
+ summarize(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+Question: this works for the strata, but how do we do that for the additive model?
+
+### Running the models
+
+From Evans et al. (2024): linear models are fit using restricted maximum likelihood estimation (RMLE) using the function lmer, and logistic models are fitted using a Laplace Approximation of maximum likelihood estimation using the funtion glmer.
+
+Our outcome is everyday/someday E-product usage (`eprod_edsd`).
+
+#### Null model
+
+```{r}
+dat_4 <- dat %>% 
+ filter(wave == 4)
+
+dat_7 <- dat %>% 
+ filter(wave == 7)
+```
+
+```{r}
+dat_4 %>% 
+ group_by(strata_label) %>% 
+ summarize(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+```{r}
+dat_7 %>% 
+ group_by(strata_label) %>% 
+ summarize(tot = sum(eprod_edsd)) %>% 
+ arrange(tot)
+```
+
+
+```{r}
+library(lme4)
+
+mod1_4 <- glmer(eprod_edsd ~ (1 | strata_label), 
+               data = dat_4,
+               family = binomial(link = "logit"))
+
+summary(mod1_4)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat_4$mod1xbu <- predict(mod1_4, type = "response")
+
+# Predict the linear predictor for the fixed portion of the model only
+# (only the intercept, so this is just the weighted grand mean probability)
+dat_4$mod1xb <- predict(mod1_4, type="response", re.form=NA)
+```
+
+```{r}
+library(lme4)
+
+mod1_7 <- glmer(eprod_edsd ~ (1 | strata_label), 
+               data = dat_7,
+               family = binomial(link = "logit"))
+
+summary(mod1_7)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat_7$mod1xbu <- predict(mod1_7, type = "response")
+
+# Predict the linear predictor for the fixed portion of the model only
+# (only the intercept, so this is just the weighted grand mean probability)
+dat_7$mod1xb <- predict(mod1_7, type="response", re.form=NA)
+```
+
+#### Additive model
+
+```{r}
+library(merTools)
+
+mod2_4 <- glmer(eprod_edsd ~ region + race_ethnicity + sex + age + (1 | strata_label),
+                data = dat_4,
+                family = binomial(link = "logit")) #change reference to White, Male, 18-24, Northeast or West
+
+summary(mod2_4)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat_4$mod2m <- predict(mod2_4, type = "response")
+
+
+# predict the fitted linear predictor, and confidence intervals, on the logit 
+# scale
+m2m_4 <- predictInterval(mod2_4, level=0.95, include.resid.var=FALSE)
+# create a new id variable for this newly created dataframe
+m2m_4 <- mutate(m2m_4, id=row_number())
+
+# on the logit scale, predict the linear predictor for the fixed portion of the
+# model only
+dat_4$m2mF <- predict(mod2_4, re.form=NA)
+
+# predict the fitted linear predictor, and confidence intervals, on the 
+# probability scale
+m2m_prob_4 <- predictInterval(mod2_4, level=0.95, include.resid.var=FALSE, 
+                             type="probability") 
+# note that, unlike the stata code, this code combines the uncertainty from the
+# fixed and random parts. This saves a step later compared to the Stata code.
+
+# create a new id variable for this newly created dataframe
+m2m_prob_4 <- mutate(m2m_prob_4, id=row_number())
+
+# predict the fitted linear predictor, on the probability scale, for the fixed 
+# portion of the model only
+dat_4$m2xb <- predict(mod2_4, re.form=NA, type="response")
+
+#predict the stratum random effects and associated standard errors
+m2u_4 <- REsim(mod2_4)
+
+```
+
+```{r}
+library(merTools)
+
+mod2_7 <- glmer(eprod_edsd ~ region + race_ethnicity + sex + age + (1 | strata_label),
+                data = dat_7,
+                family = binomial(link = "logit"))
+
+summary(mod2_7)
+
+# Predict the fitted linear predictor (on the probability scale)
+dat_7$mod2m <- predict(mod2_7, type = "response")
+
+
+# predict the fitted linear predictor, and confidence intervals, on the logit 
+# scale
+m2m_7 <- predictInterval(mod2_7, level=0.95, include.resid.var=FALSE)
+# create a new id variable for this newly created dataframe
+m2m_7 <- mutate(m2m_7, id=row_number())
+
+# on the logit scale, predict the linear predictor for the fixed portion of the
+# model only
+dat_7$m2mF <- predict(mod2_7, re.form=NA)
+
+# predict the fitted linear predictor, and confidence intervals, on the 
+# probability scale
+m2m_prob_7 <- predictInterval(mod2_7, level=0.95, include.resid.var=FALSE, 
+                             type="probability") 
+# note that, unlike the stata code, this code combines the uncertainty from the
+# fixed and random parts. This saves a step later compared to the Stata code.
+
+# create a new id variable for this newly created dataframe
+m2m_prob_7 <- mutate(m2m_prob_7, id=row_number())
+
+# predict the fitted linear predictor, on the probability scale, for the fixed 
+# portion of the model only
+dat_7$m2xb <- predict(mod2_7, re.form=NA, type="response")
+
+#predict the stratum random effects and associated standard errors
+m2u_7 <- REsim(mod2_7)
+
+```
+
+```{r}
+vc1a <-as.data.frame(VarCorr(mod1_7))
+vc1b <-as.data.frame(VarCorr(mod2_7))
+
+PCV1 <- ((vc1a[1,4] - vc1b[1,4]) / vc1a[1,4])*100
+PCV1 #89.28
+
+# Models for Wave 4 = 79.74
+# Models for Wave 7 = 92.37
+```
+
+```{r}
+
+library(Metrics)
+## Wave 7
+
+# Calculate the area under the receiver operating characteristic (ROC) curve
+# for model 2a - based on intercept and stratum random effects
+AUC2A <- auc(dat_7$eprod_edsd, dat_7$mod1xbu)
+
+#for model 2A - based on only the fixed portion of the model
+AUC2AF <- auc(dat_7$eprod_edsd, dat_7$mod1xb)
+
+#for model 2b - based on intercept, main effects, and stratum random effects
+AUC2B <- auc(dat_7$eprod_edsd, dat_7$m2mF)
+#for model 2b - based on the fixed portion of the model (main effects)
+AUC2BF <- auc(dat_7$eprod_edsd, dat_7$m2xb) 
+
+#output the AUC calculations
+AUC2A
+AUC2AF
+AUC2B
+AUC2BF
+```
+
+```{r}
+## Wave 4
+
+# Calculate the area under the receiver operating characteristic (ROC) curve
+# for model 2a - based on intercept and stratum random effects
+AUC2A <- auc(dat_4$eprod_edsd, dat_4$mod1xbu)
+
+#for model 2A - based on only the fixed portion of the model
+AUC2AF <- auc(dat_4$eprod_edsd, dat_4$mod1xb)
+
+#for model 2b - based on intercept, main effects, and stratum random effects
+AUC2B <- auc(dat_4$eprod_edsd, dat_4$m2mF)
+#for model 2b - based on the fixed portion of the model (main effects)
+AUC2BF <- auc(dat_4$eprod_edsd, dat_4$m2xb) 
+
+#output the AUC calculations
+AUC2A
+AUC2AF
+AUC2B
+AUC2BF
+```
+
+
+### Visualizations
+
+#### Histograms
+
+```{r}
+# Histogram of the observed stratum means (and mean of means)
+dat_4 %>% 
+ group_by(strata_label) %>% 
+ summarise(avg = mean(eprod_edsd)) %>% 
+ ggplot(., aes(avg)) +
+ geom_histogram(fill = "gray") +
+  labs(title = "Observed Eproduct Use",
+       x = "Observed Eprod Use",
+       y = "Percent of Strata") +
+ geom_vline(aes(xintercept = mean(avg))) +
+ theme_minimal()
+
+
+# Histogram of the predicted stratum means
+ggplot(dat_4, aes(x=mod1xbu)) + 
+  geom_histogram(aes(y = after_stat(count / sum(count))), fill = "gray") + 
+  scale_y_continuous(labels=scales::percent) +
+  labs(title = "Predicted Eproduct Use",
+       x = "Predicted Eprod Use",
+       y = "Percent of Strata") +
+  geom_vline(aes(xintercept=0.07583355))+ #this is the precision weighted grand mean
+  theme_minimal()
+```
+
+
+```{r}
+# Histogram of the observed stratum means (and mean of means)
+dat_7 %>% 
+ group_by(strata_label) %>% 
+ summarise(avg = mean(eprod_edsd)) %>% 
+ ggplot(., aes(avg)) +
+ geom_histogram(fill = "gray") +
+  labs(title = "Observed Eproduct Use",
+       x = "Observed Eprod Use",
+       y = "Percent of Strata") +
+ geom_vline(aes(xintercept = mean(avg))) +
+ theme_minimal()
+
+
+# Histogram of the predicted stratum means
+ggplot(dat_7, aes(x=mod1xbu)) + 
+  geom_histogram(aes(y = after_stat(count / sum(count))), fill = "gray") + 
+  scale_y_continuous(labels=scales::percent) +
+  labs(title = "Predicted Eproduct Use",
+       x = "Predicted Eprod Use",
+       y = "Percent of Strata") +
+  geom_vline(aes(xintercept=0.1078718))+ #this is the precision weighted grand mean
+  theme_minimal()
+```
+
+#### Ranks
+
+
+```{r}
+###################################
+# create a data frame at the strata level (with the means of each variable)
+##################################
+
+# first, merge predictions with original data
+
+# create an id variable for merging in the tut dataframe
+dat_4$id <- seq.int(nrow(dat_4))
+
+# merge in m2bm_prob
+dat_4 <- merge(dat_4, m2m_prob_4, by="id")
+
+dat_4 <- dat_4 %>%
+  rename(
+    m2mfit=fit,
+    m2mupr= upr,
+    m2mlwr=lwr
+  )
+
+# merge in m2Bm
+dat_4 <- merge(dat_4, m2m_4, by="id")
+
+dat_4 <- dat_4 %>%
+  rename(
+    m2mfitL=fit,
+    m2muprL= upr,
+    m2mlwrL=lwr
+  )
+
+dat_4 <- dat_4 %>%
+  group_by(strata_label) %>%
+  mutate(strataN = n())
+ 
+
+# Collapse the data down to a stratum-level dataset 
+## NOTE: THIS MAKES 96 strata
+stratum_level <- aggregate(x=dat_4["eprod_edsd"], 
+                  by=dat_4[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN",
+                  "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")],
+                  FUN=mean)
+
+# NOTE: TAKE MEANS OF ESTIMATES? TRIED THIS AND GET 24 STRATA, BUT NOT SURE IF THIS IS THE ROUTE TO GO.
+stratum_level <- aggregate(x=dat_4[c("eprod_edsd", "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")], 
+                  by=dat_4[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN")],
+                  FUN=mean)
+
+# convert the outcome from a proportion to a percentage
+stratum_level$eprod_edsd <- stratum_level$eprod_edsd*100
+```
+
+```{r}
+###################################
+# create a data frame at the strata level (with the means of each variable)
+##################################
+
+# first, merge predictions with original data
+
+# create an id variable for merging in the tut dataframe
+dat_7$id <- seq.int(nrow(dat_7))
+
+# merge in m2bm_prob
+dat_7 <- merge(dat_7, m2m_prob_7, by="id")
+
+dat_7 <- dat_7 %>%
+  rename(
+    m2mfit=fit,
+    m2mupr= upr,
+    m2mlwr=lwr
+  )
+
+# merge in m2Bm
+dat_7 <- merge(dat_7, m2m_7, by="id")
+
+dat_7 <- dat_7 %>%
+  rename(
+    m2mfitL=fit,
+    m2muprL= upr,
+    m2mlwrL=lwr
+  )
+
+dat_7 <- dat_7 %>%
+  group_by(strata_label) %>%
+  mutate(strataN = n())
+ 
+
+# Collapse the data down to a stratum-level dataset 
+## NOTE: THIS MAKES 96 strata
+stratum_level_7 <- aggregate(x=dat_7["eprod_edsd"], 
+                  by=dat_7[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN",
+                  "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")],
+                  FUN=mean)
+
+# NOTE: TAKE MEANS OF ESTIMATES? TRIED THIS AND GET 24 STRATA, BUT NOT SURE IF THIS IS THE ROUTE TO GO.
+stratum_level_7 <- aggregate(x=dat_7[c("eprod_edsd", "m2mfit", "m2mupr", "m2mlwr", 
+                  "m2mfitL", "m2muprL", "m2mlwrL",
+                  "m2mF")], 
+                  by=dat_7[c("region", "age", "sex", "race_ethnicity",
+                  "strata_label", "strataN")],
+                  FUN=mean)
+
+# convert the outcome from a proportion to a percentage
+stratum_level_7$eprod_edsd <- stratum_level_7$eprod_edsd*100
+```
+
+Wave 4
+```{r}
+##############
+#Figure 2 / table 4
+#############
+
+# Panel B
+
+# note that (compared to Stata code), our predictions are already on the
+# probability scale
+
+# Rank the predicted stratum probabilities
+stratum_level <- stratum_level %>%
+  mutate(rank2=rank(m2mfit))
+
+# convert probabilities to percentages
+stratum_level$m2mfit <- stratum_level$m2mfit * 100
+stratum_level$m2mupr <- stratum_level$m2mupr * 100
+stratum_level$m2mlwr <- stratum_level$m2mlwr * 100
+
+# Plot the caterpillar plot of the predicted stratum means
+plot_4 <- ggplot(stratum_level, aes(y=m2mfit, x=rank2)) +
+  geom_point() +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Wave 4") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+# Generate list of 6 highest and 6 lowest predicted stratum means (for Table 4)
+stratum_level <- stratum_level[order(stratum_level$rank2),]
+head(stratum_level)
+tail(stratum_level)
+
+ranks <- stratum_level %>% 
+ dplyr::select(region, age, sex, race_ethnicity, strata_label, strataN, eprod_edsd, m2mfit, rank2) %>% 
+ arrange(-rank2)
+
+ranks
+```
+
+Wave 7
+```{r}
+##############
+#Figure 2 / table 4
+#############
+
+# Panel B
+
+# note that (compared to Stata code), our predictions are already on the
+# probability scale
+
+# Rank the predicted stratum probabilities
+stratum_level_7 <- stratum_level_7 %>%
+  mutate(rank2=rank(m2mfit))
+
+# convert probabilities to percentages
+stratum_level_7$m2mfit <- stratum_level_7$m2mfit * 100
+stratum_level_7$m2mupr <- stratum_level_7$m2mupr * 100
+stratum_level_7$m2mlwr <- stratum_level_7$m2mlwr * 100
+
+# Plot the caterpillar plot of the predicted stratum means
+plot_7 <- ggplot(stratum_level_7, aes(y=m2mfit, x=rank2)) +
+  geom_point() +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Wave 4") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+# Generate list of 6 highest and 6 lowest predicted stratum means (for Table 4)
+stratum_level_7 <- stratum_level_7[order(stratum_level_7$rank2),]
+head(stratum_level_7)
+tail(stratum_level_7)
+
+ranks <- stratum_level_7 %>% 
+ dplyr::select(region, age, sex, race_ethnicity, strata_label, strataN, eprod_edsd, m2mfit, rank2) %>% 
+ arrange(-rank2)
+
+ranks
+```
+
+
+```{r}
+stratum_level$wave <- 4
+stratum_level_7$wave <- 7
+
+plot_dat <- bind_rows(stratum_level, stratum_level_7)
+
+ggplot(plot_dat, aes(y=m2mfit, x=rank2)) +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  geom_point(aes(color= as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") + 
+  theme_bw()
+
+ggplot(plot_dat, aes(y=m2mfit, x=strata_label)) +
+  geom_pointrange(aes(ymin=m2mlwr, ymax=m2mupr)) +
+  geom_point(aes(color= as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") + 
+  coord_flip() +
+  theme_bw()
+```
+
+```{r}
+plot_4 <- plot_dat %>% 
+ filter(wave == 4) %>% 
+ ggplot(aes(y = m2mfit, x = reorder(strata_label, m2mfit))) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") +
+  coord_flip() +
+  theme_bw()
+
+plot_7 <- plot_dat %>% 
+ filter(wave == 7) %>% 
+ ggplot(aes(y = m2mfit, x = reorder(strata_label, m2mfit))) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") +
+  coord_flip() +
+  theme_bw()
+
+```
+
+```{r}
+plot_both <- ggplot(
+  plot_dat %>%
+    filter(wave %in% c(4, 7)) %>%
+    group_by(strata_label) %>%
+    mutate(diff = m2mfit[wave == 7] - m2mfit[wave == 4]) %>%
+    ungroup() %>%
+    mutate(strata_label = reorder(strata_label, diff)),
+  aes(y = m2mfit, x = strata_label)
+) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank") +
+  coord_flip() +
+  theme_bw()
+
+```
+
+```{r}
+ggplot(
+  {
+    top15_strata <- plot_dat %>%
+      filter(wave %in% c(4, 7)) %>%
+      pivot_wider(names_from = wave, values_from = m2mfit, names_prefix = "wave_") %>%
+      mutate(diff = wave_7 - wave_4) %>%
+      arrange(desc(diff)) %>%
+      slice_head(n = 15) %>%
+      pull(strata_label)
+
+    plot_dat %>%
+      filter(strata_label %in% top15_strata, wave %in% c(4, 7)) %>%
+      left_join(
+        plot_dat %>%
+          filter(wave %in% c(4, 7)) %>%
+          pivot_wider(names_from = wave, values_from = m2mfit, names_prefix = "wave_") %>%
+          mutate(diff = wave_7 - wave_4) %>%
+          select(strata_label, diff),
+        by = "strata_label"
+      ) %>%
+      mutate(strata_label = reorder(strata_label, diff))
+  },
+  aes(y = m2mfit, x = strata_label)
+) +
+  geom_pointrange(aes(ymin = m2mlwr, ymax = m2mupr)) +
+  geom_point(aes(color = as.factor(wave))) +
+  ylab("Predicted Percent EDSD E-Product User, Model 2 for Both Waves") +
+  xlab("Stratum Rank (Top 15 by Increase from Wave 4 to 7)") +
+  coord_flip() +
+  theme_bw()
+```
+
+
+
+
+```{r}
+###############
+# Figure 3
+###############
+# Panel C
+
+# create figure but on the log-odds scale
+m2Bu <- REsim(model2B)
+plotREsim(m2Bu)
+
+# This is more difficult to do on the probability scale
+
+# For this plot we follow a simulation-based approach to 
+# calculating the limits of the approximate 95% confidence intervals of our 
+# predictions. This involves simulating 1000 values for each predicted value.
+
+# Approximate as the model assumes no sampling covariability between the 
+# regression coefficients and the stratum random effect
+
+# duplicate stratum data *1000 (creating a new dataframe, stratumsim)
+stratumsim <- rbind(stratum_level, 
+                    stratum_level[rep(1:nrow(stratum_level),999),])
+
+# Generate the approximate standard error for the linear prediction on the
+# logit scale. We do this based on the difference between one estimated
+# confidence interval and the estimated fit, on the logit scale
+stratumsim$m2Bmse <- (stratumsim$m2BmfitL - stratumsim$m2BmlwrL)/1.96
+
+# specify initial value of the random-number seed (for replication purposes)
+set.seed(354612)
+
+# Generate the predicted stratum percentages based on the regression 
+# coefficients and the predicted stratum random effect and factoring in 
+# prediction uncertainty
+stratumsim$m2Bpsim <- 100*invlogit(stratumsim$m2BmfitL + 
+                                  rnorm(24000, mean=0, sd=stratumsim$m2Bmse))
+
+# Generate the predicted stratum percentages ignoring the predicted stratum 
+# effect
+stratumsim$m2BpAsim <- 100*invlogit(stratumsim$m2BmF)
+
+# Generate the difference in the predicted stratum percentages due to the 
+# predicted stratum effect
+stratumsim$m2BpBsim <- stratumsim$m2Bpsim - stratumsim$m2BpAsim
+
+# sort the data by strata
+stratumsim <- stratumsim %>% 
+ arrange(strata)
+
+# collapse the data down to stratum level, generate mean and SE variables,
+# then use these to generate rank and lower and upper limits of the approximate
+# 95% confidence intervals of the difference in predicted stratum percentates 
+# due to interaction variables.
+stratumsim2 <- stratumsim %>%
+  group_by(strata) %>%
+  summarise(mean=mean(m2BpBsim), std=sd(m2BpBsim)) %>%
+  mutate(rank=rank(mean)) %>%
+  mutate(hi=(mean + 1.96*std)) %>%
+  mutate(lo=(mean - 1.96*std))
+
+# plot the caterpillar plot of the predicted stratum percentage differences
+ggplot(stratumsim2, aes(x=rank, y=mean)) +
+  geom_hline(yintercept=0, color="red", linewidth=1) +
+  geom_point(size=3) +
+  geom_pointrange(aes(ymin=lo, ymax=hi)) + 
+  xlab("Stratum Rank") +
+  ylab("Difference in predicted EDSD e-product user due to interactions") +
+  theme_bw()
+```
+
+
+
+
+Notes for later:
+- Elaborate, why not chisq or single-level?
+- Create colorful caterpillar plots
+
