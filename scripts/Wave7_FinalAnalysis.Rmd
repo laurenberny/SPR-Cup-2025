@@ -1,0 +1,275 @@
+---
+title: 'Wave 7: Bayesian Analyses'
+author: "Lauren Berny"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(csSampling)
+library(dplyr)
+library(brms)
+library(rstan)
+library(survey)
+library(cmdstanr)
+library(tidyverse)
+library(ggeffects)
+library(lme4)
+library(merTools)
+library(labelled)
+library(sjPlot)
+library(Metrics)
+library(janitor)
+library(here)
+library(rio)
+library(posterior)
+library(tibble)
+library(purrr)
+library(survey)
+```
+
+# Load Wave 7 Data
+
+```{r cars}
+wave7_nullmod <- readRDS(here("models", "Wave 7", "Weighted Bayesian", "wave7_nullmod.RDS"))
+wave7_fullmod <- readRDS(here("models", "Wave 7", "Weighted Bayesian", "wave7_fullmod.RDS"))
+wave7_nullmod_uw <- readRDS(here("models", "Wave 7", "Unweighted Bayesian", "wave7_nullmod_unweighted.RDS"))
+wave7_fullmod_uw <- readRDS(here("models", "Wave 7", "UnWeighted Bayesian", "wave7_fullmod_unweighted.RDS"))
+source(here("scripts", "helpers.R"))
+load(here("data", "combined_clean.RData"))
+```
+
+# Make Labels
+
+```{r}
+labs <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==7) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+labs <- labs %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+# n_distinct(groups$strata)
+
+labs <- labs %>%
+  mutate(strata_label = paste(region, race_ethnicity, sex, age, sep = ", ")) %>%
+  dplyr::select(strata, strata_label) %>% 
+  unique() %>% 
+  arrange(strata) %>%
+  mutate(strata_rank = row_number()) %>% 
+  mutate(variable = paste0("strata_", strata_rank)) %>% 
+  dplyr::select(-strata_rank)
+```
+
+# Summary of Results
+
+Summary adapted from NSDUH depression paper.
+
+## Wave 7 full and weighted
+
+```{r}
+wave7_full_stan <- wave7_fullmod$stan_fit
+
+## Extract parameter estimates, effective sample size (ESS), and r-hat 
+## from each model fit. Specify 95% credible intervals.
+
+
+wave7_full_sum = as.data.frame(rstan::summary(wave7_fullmod$stan_fit,
+                                probs = c(0.025, 0.975))$summary)
+
+
+wave7_full_estimates <- wave7_full_sum %>% 
+  # keep rows with beta coefficients
+  # 10/24/2024 Note: We have updated this to the correct intercept parameter 
+  # ("b_Intercept")
+  filter(rownames(.) %in% c("b[1]", "b[2]", "b[3]", 
+                            "b[4]", "b[5]", "b[6]",
+                            "b[7]", "b[8]", "b[9]",
+                            "b_Intercept")) %>% 
+  mutate(
+    parameter = c("Northeast",
+                  "South",
+                  "West",
+                  "Age_25-44",
+                  "Age_45+",
+                  "Male",
+                  "Hispanic",
+                  "Other",
+                  "White",
+                  "Intercept"),
+    OR = format(round(exp(mean),digits=2),nsmall=2),
+    LB = format(round(exp(`2.5%`),digits=2),nsmall=2),
+    UB = format(round(exp(`97.5%`),digits=2),nsmall=2),
+    est = paste(OR," (",LB,", ",UB,")", sep="")) %>% 
+ dplyr::select(parameter, OR, LB, UB, est)
+
+wave7_full_estimates
+```
+
+## Wave 7 full and unweighted
+
+**Anwesha/Janette/Elizabeth** -- want to take on the unweighted ones?
+
+```{r}
+
+
+```
+
+
+# MAIHDA: PCV/VPC
+
+## Weighted
+
+```{r}
+modlist_wv7 <- list(wave7_nullmod[["stan_fit"]], wave7_fullmod[["stan_fit"]])
+
+variance(modlist_wv7)
+```
+
+
+# Strata Estimates for Wave 7
+
+## Weighted
+
+### Extract posterior draws
+
+```{r warning=FALSE}
+posterior <- as_draws_df(wave7_fullmod[["stan_fit"]])
+
+# Fixed effects matrix: one row per draw, one column per beta
+beta_matrix <- posterior %>%
+  dplyr::select(starts_with("b[")) %>%
+  as.matrix()  # dimension: [n_draws x k]
+
+# Global intercept
+intercept_vector <- posterior$b_Intercept  # length = n_draws
+
+# Random intercepts per strata (r_1_1[1] to r_1_1[96])
+random_intercepts_matrix <- posterior %>%
+  dplyr::select(matches("^r_1_1\\[[0-9]+\\]$")) %>%
+  as.matrix()  # dimension: [n_draws x 96]
+```
+
+### Create design matrix of covariate values for each strata
+
+```{r}
+# 2. Create 1 row per strata with typical covariates
+
+dat_wv7 <- full %>% 
+ mutate(across(region:age, as.factor)) %>%
+ filter(wave==7) %>% 
+ filter(!is.na(weight)) %>% 
+ filter(!is.na(sex)) %>% 
+ filter(!is.na(age)) %>% 
+ filter(!is.na(eprod_edsd))
+
+dat_wv7 <- dat_wv7 %>% 
+  mutate(strata = 1000 * as.numeric(region) + 
+                   100 * as.numeric(age) + 
+                    10 * as.numeric(sex) + 
+                     1 * as.numeric(race_ethnicity))
+
+newdata_strata <- dat_wv7 %>%
+ dplyr::select(strata, region, age, sex, race_ethnicity) %>% 
+ arrange(strata) %>% ## THIS IS ESSENTIAL FOR ORDER TO BE CORRECT ACROSS ALL MATRICES
+ unique()
+
+rownames(newdata_strata) <- NULL
+
+# 3. Create the design matrix X using the same formula
+
+# Create model matrix WITHOUT intercept (b_Intercept handled separately)
+X <- model.matrix(~ region + age + sex + race_ethnicity, data = newdata_strata)
+
+X_covariates <- X[, 2:10]
+```
+
+
+### Create predicted probabilities per strata
+
+These are **total effects**, i.e., intercept + random intercept + fixed effects.
+
+```{r}
+# Ensure covariates are in correct matrix format: [96 strata x k covariates]
+X_covariates <- as.matrix(X_covariates)  # 96 x k
+
+# Function to compute predicted probabilities for one strata
+compute_strata_probs <- function(stratum_index) {
+  # Covariate row for that strata (1 x k)
+  x_row <- X_covariates[stratum_index, , drop = FALSE]
+  
+  # Multiply covariates by fixed effects per draw: [n_draws x k] * [k x 1] = [n_draws x 1]
+  xb <- beta_matrix %*% t(x_row)  # [n_draws x 1]
+  
+  # Linear predictor: intercept + random intercept + fixed effects
+  linpred <- intercept_vector + random_intercepts_matrix[, stratum_index] + xb[, 1]
+  
+  # Convert to probability
+  plogis(linpred)
+}
+
+# Compute probabilities for all 96 strata
+strata_probs_list <- map(1:96, compute_strata_probs)
+
+# Combine into a data frame: rows = draws, columns = strata
+strata_probs_matrix <- do.call(cbind, strata_probs_list)
+colnames(strata_probs_matrix) <- paste0("strata_", 1:96)
+```
+
+### Posterior summaries for each strata across 16k draws
+
+```{r}
+# Get posterior summaries per strata (mean, SD, 95% CI)
+posteriorsum_weighted <- posterior::summarise_draws(strata_probs_matrix)
+
+posteriorsum_weighted <- left_join(labs, posteriorsum_weighted, by = "variable")
+
+wv7_weighted_est <- posteriorsum_weighted %>% 
+ arrange(mean)
+
+wv7_weighted_est
+
+# saveRDS(wv7_weighted_est, "wv7_weighted_est.RDS")
+```
+
+
+## Unweighted
+
+**Anwesha/Janette/Elizabeth** -- Helper will not work on brmsfit--need help figuring out for unweighted
+
+```{r}
+
+```
+
+# Observed Weighted Estimates
+
+```{r}
+# Step 1: Define your survey design
+svy_design <- svydesign(
+  id = ~var_psu,
+  strata = ~var_strat,
+  weights = ~weight,
+  data = dat_wv7,
+  nest = TRUE  # important if strata and PSU are nested (common case)
+)
+
+# Step 2: Get weighted proportion of eprod_edsd == 1 by strata
+obs_wv7_weighted <- svyby(
+  ~eprod_edsd,
+  ~strata,  # your target grouping variable
+  svy_design,
+  svymean,
+  vartype = "se")  # optional: include standard error and confidence intervals
+
+# saveRDS(obs_wv7_weighted, "obs_wv7_weighted.RDS")
+```
+
