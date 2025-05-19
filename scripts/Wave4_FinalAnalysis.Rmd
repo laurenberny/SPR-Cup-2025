@@ -252,10 +252,21 @@ wv4_weighted_est
 
 ## Unweighted
 
-**Anwesha/Janette/Elizabeth** -- Helper will not work on brmsfit--need help figuring out for unweighted
+**Anwesha/Janette/Elizabeth** -- I think this is right but am not sure. Thoughts?
 
 ```{r}
+strata_probs_uw <- fitted(
+  wave4_fullmod_uw,
+  newdata = newdata_strata,
+  re_formula = NULL,    # argument to include fixed + random effects
+  summary = TRUE,       # posterior means and intervals
+  scale = "response"    # transforms logits to probabilities
+)
 
+wv4_unweighted_est <- cbind.data.frame(labs, strata_probs_uw)
+
+wv4_unweighted_est %>% 
+ arrange(Estimate)
 ```
 
 # Observed Weighted Estimates
