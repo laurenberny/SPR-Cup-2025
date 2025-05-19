@@ -117,11 +117,20 @@ wave7_full_estimates
 
 ## Wave 7 full and unweighted
 
-**Anwesha/Janette/Elizabeth** -- want to take on the unweighted ones?
-
 ```{r}
+wave7_full_sum_uw <- summary(wave7_fullmod_uw)
 
+wave7_full_sum_uw <- wave7_full_sum_uw[["fixed"]]
 
+wave7_full_sum_uw %>% 
+  dplyr::select(Estimate, `l-95% CI`, `u-95% CI`) %>% 
+  mutate(
+    OR = format(round(exp(Estimate),digits=2),nsmall=2),
+    LB = format(round(exp(`l-95% CI`),digits=2),nsmall=2),
+    UB = format(round(exp(`u-95% CI`),digits=2),nsmall=2),
+    est = paste(OR," (",LB,", ",UB,")", sep="")) %>% 
+ dplyr::select(OR, LB, UB, est) %>% 
+ slice(c(2:n(), 1))
 ```
 
 
