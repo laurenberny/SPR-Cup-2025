@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(here)
 library(rio)
 library(tidyverse)
+library(psych)
+
 ```
 
 
@@ -76,7 +78,7 @@ est_weighted_wide <- est_weighted %>%
 wv4_est_weighted %>%
  ggplot(aes(y = mean, x = reorder(strata_label, mean))) +
   geom_pointrange(aes(ymin = q5, ymax = q95)) +
-  ylab("Predicted Percent EDSD E-Product User") +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum Rank") +
   coord_flip() +
   theme_bw()
@@ -89,7 +91,7 @@ wv4_est_weighted %>%
   mutate(region = word(strata_label, 1, sep = fixed(","))) %>% 
   ggplot(aes(y = mean, x = reorder(strata_label, mean))) +
   geom_pointrange(aes(ymin = q5, ymax = q95)) +
-  ylab("Predicted Percent EDSD E-Product User") +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum") +
   coord_flip() +
   theme_bw() +
@@ -103,7 +105,7 @@ wv4_est_weighted %>%
   mutate(race_ethnicity = word(strata_label, 2, sep = fixed(","))) %>% 
   ggplot(aes(y = mean, x = reorder(strata_label, mean))) +
   geom_pointrange(aes(ymin = q5, ymax = q95)) +
-  ylab("Predicted Percent EDSD E-Product User") +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum") +
   coord_flip() +
   theme_bw() +
@@ -117,7 +119,7 @@ wv4_est_weighted %>%
   mutate(sex = word(strata_label, 3, sep = fixed(","))) %>% 
   ggplot(aes(y = mean, x = reorder(strata_label, mean))) +
   geom_pointrange(aes(ymin = q5, ymax = q95)) +
-  ylab("Predicted Percent EDSD E-Product User") +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum") +
   coord_flip() +
   theme_bw() +
@@ -131,16 +133,35 @@ wv4_est_weighted %>%
   mutate(age = word(strata_label, 4, sep = fixed(","))) %>% 
   ggplot(aes(y = mean, x = reorder(strata_label, mean))) +
   geom_pointrange(aes(ymin = q5, ymax = q95)) +
-  ylab("Predicted Percent EDSD E-Product User") +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum") +
   coord_flip() +
   theme_bw() +
   facet_wrap(~ age, scales = "free_y", ncol = 1)
 ```
 
+### Faceted by age + sex
 
+```{r}
+wv4_est_weighted %>%
+  mutate(age = word(strata_label, 4, sep = fixed(","))) %>% 
+  mutate(sex = word(strata_label, 3, sep = fixed(","))) %>%
+  mutate(race_ethnicity = word(strata_label, 2, sep = fixed(","))) %>%
+  mutate(region = word(strata_label, 1, sep = fixed(","))) %>%
+  mutate(lab = paste(region, race_ethnicity, sep = ", ")) %>% 
+  ggplot(aes(y = mean, x = reorder(lab, mean))) +
+  geom_pointrange(aes(ymin = q5, ymax = q95)) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
+  xlab("Stratum") +
+  coord_flip() +
+  theme_bw() +
+  facet_grid(age ~ sex)
+```
 
 ## Estimated vs. observed graph
+
+On average, the mean predicted EDSD rate was only 0.14 percentage points low than the weighted, observed rate (5.44% vs. 5.47%). 
+
 
 ```{r}
 wv4_est_weighted %>%
@@ -153,6 +174,9 @@ wv4_est_weighted %>%
   coord_flip() +
   theme_bw() +
   theme(legend.title = element_blank())
+
+describe(wv4_est_weighted$eprod_edsd)
+describe(wv4_est_weighted$mean)
 ```
 
 # Wave 7: Weighted Estimates
@@ -227,7 +251,28 @@ wv7_est_weighted %>%
   facet_wrap(~ age, scales = "free_y", ncol = 1)
 ```
 
+### Faceted by age + sex
+
+```{r}
+wv7_est_weighted %>%
+  mutate(age = word(strata_label, 4, sep = fixed(","))) %>% 
+  mutate(sex = word(strata_label, 3, sep = fixed(","))) %>%
+  mutate(race_ethnicity = word(strata_label, 2, sep = fixed(","))) %>%
+  mutate(region = word(strata_label, 1, sep = fixed(","))) %>%
+  mutate(lab = paste(region, race_ethnicity, sep = ", ")) %>% 
+  ggplot(aes(y = mean, x = reorder(lab, mean))) +
+  geom_pointrange(aes(ymin = q5, ymax = q95)) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
+  xlab("Stratum") +
+  coord_flip() +
+  theme_bw() +
+  facet_grid(sex ~ age)
+```
+
+
 ## Estimated vs. observed graph
+
+On average, the mean predicted EDSD rate was only 0.17 percentage points higher than the weighted, observed rate (9.67% vs. 9.5%). 
 
 ```{r}
 wv7_est_weighted %>%
@@ -235,11 +280,14 @@ wv7_est_weighted %>%
   geom_point(aes(y = mean, color = "Predicted"), size = 2) +
   geom_point(aes(y = eprod_edsd, color = "Observed"), size = 2) +
   scale_color_manual(values = c("Predicted" = "black", "Observed" = "purple")) +
-  ylab("Percent EDSD E-Product Use") +
+  ylab("Predicted EDSD E-Product Use Rates") +
   xlab("Stratum (Ranked by Accuracy, Lowest to Highest)") +
   coord_flip() +
   theme_bw() +
   theme(legend.title = element_blank())
+
+describe(wv7_est_weighted$eprod_edsd)
+describe(wv7_est_weighted$mean)
 ```
 
 # Wave 4 vs. Wave 7 Estimates
@@ -250,14 +298,14 @@ est_weighted_wide %>%
   
   # Wave 4 point + interval
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
-  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "black") +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
 
   # Wave 7 point + interval
   geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
-  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "purple") +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
 
-  scale_color_manual(values = c("Wave 4" = "black", "Wave 7" = "purple")) +
-  ylab("Percent EDSD E-Product Use") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum (Ranked by Change, Greatest to Least)") +
   coord_flip() +
   theme_bw() +
@@ -271,11 +319,11 @@ est_weighted_wide %>%
   mutate(region = word(strata_label, 1, sep = fixed(","))) %>% 
   ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
-  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "black") +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
   geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
-  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "purple") +
-  scale_color_manual(values = c("Wave 4" = "black", "Wave 7" = "purple")) +
-  ylab("Percent EDSD E-Product Use") +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum (Ranked by Change, Greatest to Least)") +
   coord_flip() +
   facet_wrap(~ region, scales = "free_y", ncol = 1) +
@@ -291,11 +339,11 @@ est_weighted_wide %>%
   mutate(race_ethnicity = word(strata_label, 2, sep = fixed(","))) %>% 
   ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
-  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "black") +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
   geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
-  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "purple") +
-  scale_color_manual(values = c("Wave 4" = "black", "Wave 7" = "purple")) +
-  ylab("Percent EDSD E-Product Use") +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum (Ranked by Change, Greatest to Least)") +
   coord_flip() +
   facet_wrap(~ race_ethnicity, scales = "free_y", ncol = 1) +
@@ -311,11 +359,11 @@ est_weighted_wide %>%
   mutate(sex = word(strata_label, 3, sep = fixed(","))) %>% 
   ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
-  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "black") +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
   geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
-  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "purple") +
-  scale_color_manual(values = c("Wave 4" = "black", "Wave 7" = "purple")) +
-  ylab("Percent EDSD E-Product Use") +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum (Ranked by Change, Greatest to Least)") +
   coord_flip() +
   facet_wrap(~ sex, scales = "free_y", ncol = 1) +
@@ -331,14 +379,39 @@ est_weighted_wide %>%
   mutate(age = word(strata_label, 4, sep = fixed(","))) %>% 
   ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
-  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "black") +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
   geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
-  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "purple") +
-  scale_color_manual(values = c("Wave 4" = "black", "Wave 7" = "purple")) +
-  ylab("Percent EDSD E-Product Use") +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
   xlab("Stratum (Ranked by Change, Greatest to Least)") +
   coord_flip() +
   facet_wrap(~ age, scales = "free_y", ncol = 1) +
   theme_bw() +
   theme(legend.title = element_blank())
 ```
+
+
+### Faceted by age + sex
+
+
+```{r}
+est_weighted_wide %>%
+  mutate(age = word(strata_label, 4, sep = fixed(","))) %>% 
+  mutate(sex = word(strata_label, 3, sep = fixed(","))) %>%
+  mutate(race_ethnicity = word(strata_label, 2, sep = fixed(","))) %>%
+  mutate(region = word(strata_label, 1, sep = fixed(","))) %>%
+  mutate(lab = paste(region, race_ethnicity, sep = ", ")) %>% 
+  ggplot(aes(x = reorder(lab, est_wave_diff))) +
+  geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
+  geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
+  xlab("Stratum (Ranked by Change, Greatest to Least)") +
+  coord_flip() +
+  theme_bw() +
+  facet_grid(sex ~ age)
+```
+
