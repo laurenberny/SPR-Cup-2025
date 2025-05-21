@@ -279,7 +279,7 @@ est_weighted_wide %>%
 ## Faceted by region
 
 ```{r}
-est_weighted_wide %>%
+region_facet <- est_weighted_wide %>%
   mutate(region = word(strata_label, 1, sep = fixed(","))) %>% 
   ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
@@ -293,6 +293,8 @@ est_weighted_wide %>%
   facet_wrap(~ region, scales = "free_y", ncol = 1) +
   theme_bw() +
   theme(legend.title = element_blank())
+
+region_facet
 ```
 
 
@@ -338,8 +340,8 @@ est_weighted_wide %>%
 
 ## Faceted by age
 
-```{r}
-est_weighted_wide %>%
+```{r fig.width=8, fig.height=12}
+age_facet <- est_weighted_wide %>%
   mutate(age = word(strata_label, 4, sep = fixed(","))) %>% 
   ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
@@ -353,8 +355,30 @@ est_weighted_wide %>%
   facet_wrap(~ age, scales = "free_y", ncol = 1) +
   theme_bw() +
   theme(legend.title = element_blank())
+
+age_facet
 ```
 
+## Faceted by Age and Sex
 
+```{r}
+age_sex_facet <- est_weighted_wide %>%
+  mutate(age = word(strata_label, 4, sep = fixed(",")),
+         sex = word(strata_label, 3, sep = fixed(","))) %>% 
+  ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
+  geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "turquoise4") +
+  geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "darkorchid4") +
+  scale_color_manual(values = c("Wave 4" = "turquoise4", "Wave 7" = "darkorchid4")) +
+  ylab("Predicted EDSD E-Product Use (95% Crl)") +
+  xlab("Stratum (Ranked by Change, Greatest to Least)") +
+  coord_flip() +
+  facet_wrap(~ interaction(age, sex), scales = "free_y") +
+  theme_bw() +
+  theme(legend.title = element_blank())
+
+age_sex_facet
+```
 
 
