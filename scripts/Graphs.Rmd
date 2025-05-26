@@ -270,7 +270,7 @@ est_weighted_wide %>%
 
   scale_color_manual(values = c("Wave 4" = "#206997", "Wave 7" = "#7db63b")) +
   ylab("Predicted E-Product Use (95% Crl)") +
-  xlab("Stratum") +
+  xlab("Strata") +
   theme_bw() +
   theme(legend.position = "none",
         axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
@@ -301,7 +301,7 @@ est_weighted_wide %>%
   )) +
 
   ylab("Predicted E-Product Use (95% Crl)") +
-  xlab("Stratum") +
+  xlab("Strata") +
   theme_bw() +
   theme(
     legend.position = "none",
@@ -353,25 +353,106 @@ est_weighted_wide %>%
 ```
 
 
-## Faceted by sex
+## Faceted by sex - version 1
 
 ```{r}
+# Split the label by comma
+parts <- strsplit(est_weighted_wide$strata_label, ",\\s*")
+
+# Create new label excluding the 3rd element (sex)
+est_weighted_wide$lab <- sapply(parts, function(x) paste(x[-3], collapse = ", "))
+
+
 est_weighted_wide %>%
   mutate(sex = word(strata_label, 3, sep = fixed(","))) %>% 
-  ggplot(aes(x = reorder(strata_label, est_wave_diff))) +
+  ggplot(aes(x = reorder(lab, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
   geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "#206997") +
   geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
   geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "#7db63b") +
   scale_color_manual(values = c("Wave 4" = "#206997", "Wave 7" = "#7db63b")) +
   ylab("Predicted E-Product Use (95% Crl)") +
-  xlab("Stratum") +
+  xlab("Strata") +
   coord_flip() +
   facet_wrap(~ sex, scales = "free_y", ncol = 2) +
   theme_bw() +
   theme(legend.position = "none",
         axis.text.x = element_text(size = 7),
         strip.text = element_text(size = 11, face = "bold"))
+```
+
+## Faceted by sex - version 2
+
+```{r}
+# Split the label by comma
+parts <- strsplit(est_weighted_wide$strata_label, ",\\s*")
+
+# Create new label excluding the 3rd element (sex)
+est_weighted_wide$lab <- sapply(parts, function(x) paste(x[-3], collapse = ", "))
+
+est_weighted_wide %>%
+  mutate(sex = word(strata_label, 3, sep = fixed(","))) %>% 
+  arrange(-est_wave_diff) %>% 
+  slice_head(n=15) %>% 
+  ggplot(aes(x = reorder(lab, est_wave_diff))) +
+  geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "#206997") +
+  geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "#7db63b") +
+  scale_color_manual(values = c("Wave 4" = "#206997", "Wave 7" = "#7db63b")) +
+  ylab("Predicted E-Product Use (95% Crl)") +
+  xlab("Strata") +
+  coord_flip() +
+  facet_wrap(~ sex, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 7),
+        strip.text = element_text(size = 11, face = "bold"))
+
+```
+
+## Faceted by sex - version 3
+
+```{r}
+# Split the label by comma
+parts <- strsplit(est_weighted_wide$strata_label, ",\\s*")
+
+# Create new label excluding the 3rd element (sex)
+est_weighted_wide$lab <- sapply(parts, function(x) paste(x[-3], collapse = ", "))
+
+# Define your desired region order
+region_levels <- c("West", "South", "Northeast", "Midwest")  # or your custom order
+
+regionsexgrouped <- est_weighted_wide %>%
+  mutate(
+    sex = word(strata_label, 3, sep = fixed(",")),
+    region = word(strata_label, 1, sep = fixed(",")),
+    race = word(strata_label, 2, sep = fixed(",")),
+    age = word(strata_label, 4, sep = fixed(",")),
+    
+    region = factor(region, levels = region_levels),            # enforce region order
+    region_order = as.numeric(region),                          # numeric for sorting
+    
+    lab = paste(region, race, age, sep = ", "),
+    
+    # Create a combined sort key: region order + est_wave_diff
+    lab = fct_reorder(lab, region_order * 100 + est_wave_diff)  # multiply to give region more weight
+  ) %>%
+  ggplot(aes(x = lab)) +
+  geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
+  geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "#206997") +
+  geom_point(aes(y = mean_wave7, color = "Wave 7"), size = 2) +
+  geom_pointrange(aes(y = mean_wave7, ymin = q5_wave7, ymax = q95_wave7), color = "#7db63b") +
+  scale_color_manual(values = c("Wave 4" = "#206997", "Wave 7" = "#7db63b")) +
+  ylab("Predicted E-Product Use (95% CrI)") +
+  xlab("Strata") +
+  coord_flip() +
+  facet_wrap(~ sex, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 7),
+        strip.text = element_text(size = 11, face = "bold"))
+
 ```
 
 
@@ -459,6 +540,24 @@ wv4_est_weighted %>%
  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 10))
 ```
 
+## Top 15
+
+```{r}
+wv4_est_weighted %>% 
+ arrange(desc(mean)) %>% 
+ slice_head(n=15) %>% 
+ ggplot(aes(x = mean, y = reorder(strata_label, mean))) +
+  geom_point(size = 2, color = "#007030") +
+  geom_errorbarh(aes(xmin = q5, xmax = q95), height = 0.0, color = "#007030") +
+  labs(
+    x = "Predicted E-Product Use (95% Crl)",
+    y = "Strata"
+  ) +
+ coord_flip() +
+ xlim(c(0,20)) +
+  theme_minimal() +
+ theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 10))
+```
 
 
 # Catepillar Plots
@@ -481,12 +580,12 @@ wv7_est_weighted %>%
  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 8))
 ```
 
-## Top 30
+## Top 15
 
 ```{r}
 wv7_est_weighted %>% 
  arrange(desc(mean)) %>% 
- slice_head(n=30) %>% 
+ slice_head(n=15) %>% 
  ggplot(aes(x = mean, y = reorder(strata_label, mean))) +
   geom_point(size = 2, color = "#007030") +
   geom_errorbarh(aes(xmin = q5, xmax = q95), height = 0.0, color = "#007030") +

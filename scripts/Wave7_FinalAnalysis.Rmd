@@ -28,6 +28,8 @@ library(posterior)
 library(tibble)
 library(purrr)
 library(survey)
+library(gtsummary)
+library(cardx)
 ```
 
 # Load Wave 7 Data
@@ -291,5 +293,24 @@ obs_wv7_weighted <- svyby(
   vartype = "se")  # optional: include standard error and confidence intervals
 
 # saveRDS(obs_wv7_weighted, "obs_wv7_weighted.RDS")
+
+# Tables
+
+tbl_svysummary(
+  data = svy_design,
+  include = c(region, race_ethnicity, sex, age, eprod_edsd),
+  label = list(
+   region ~ "U.S. Region",
+   race_ethnicity ~ "Race/Ethnicity",
+   sex ~ "Sex",
+   age ~ "Age Group (Years)",
+   eprod_edsd ~ "Every Day/Some Day Electronic Nicotine Product User"
+  ),
+  statistic = all_categorical() ~ "{p}%",
+  percent = "column",
+  digits = all_categorical() ~ 1) %>% 
+ modify_caption("**Wave 7: Weighted Descriptive Statistics**") %>% 
+  modify_footnote(everything() ~ NA)
+
 ```
 
