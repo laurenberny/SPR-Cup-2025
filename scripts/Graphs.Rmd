@@ -392,8 +392,9 @@ est_weighted_wide$lab <- sapply(parts, function(x) paste(x[-3], collapse = ", ")
 
 est_weighted_wide %>%
   mutate(sex = word(strata_label, 3, sep = fixed(","))) %>% 
-  arrange(-est_wave_diff) %>% 
-  slice_head(n=15) %>% 
+  group_by(sex) %>%
+  slice_max(order_by = est_wave_diff, n = 15, with_ties = FALSE) %>%
+  ungroup() %>%
   ggplot(aes(x = reorder(lab, est_wave_diff))) +
   geom_point(aes(y = mean_wave4, color = "Wave 4"), size = 2) +
   geom_pointrange(aes(y = mean_wave4, ymin = q5_wave4, ymax = q95_wave4), color = "#206997") +
